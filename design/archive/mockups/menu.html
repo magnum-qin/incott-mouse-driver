@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>方案一 · 左侧编号菜单</title>
+  <link rel="stylesheet" href="kit.css" />
+  <style>html { background: #565b62; }</style>
+</head>
+<body data-scheme="menu">
+  <!-- 内容与轻交互在 kit.js；窗口 1080×720 -->
+  <script src="kit.js"></script>
+  <script>
+    document.body.insertAdjacentHTML('beforeend', SCHEMES.menu().trim());
+    wire();
+  </script>
+</body>
+</html>

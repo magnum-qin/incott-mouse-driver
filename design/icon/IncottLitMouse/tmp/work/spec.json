@@ -1,0 +1,109 @@
+{
+  "name": "IncottLitMouse",
+  "target_platforms": [
+    "Windows"
+  ],
+  "source_reference": "design brief only: the app's own UI design language (ui/style.css tokens; the mouse line art in ui/index.html readout screen). No logo, no bitmap reference.",
+  "brief": "A lit key: graphite stage, a solid white mouse like a lit keycap element, one green connected-lamp dot.",
+  "semantic_review": {
+    "status": "exact-enough",
+    "identity_risk": "low",
+    "basis": "original concept authored in-task from the app's own design language; no external brand mark and no bitmap reference to reproduce",
+    "route": "semantic-svg",
+    "notes": "Mouse body is one filled path authored from the in-app mouse proportions; the scroll wheel is a background-coloured overlay (no boolean cutout); the LED is the app's --success green."
+  },
+  "app_context": {
+    "app_name": "Incott Mouse Driver",
+    "category": "desktop hardware configuration tool (mouse driver)",
+    "job_to_be_done": "let the user recognise the mouse driver in the taskbar, Start menu and installer at a glance",
+    "tone": "calm, precise, hardware-instrument; no AI-flavoured purple, glow or gradients"
+  },
+  "style_direction": "custom direction from the app UI (单色仪表台); nearest built-in family: black-stage-mark",
+  "source_analysis": {
+    "fidelity_target": "a mouse that matches the proportions of the mouse drawn in the app's readout screen, on the app's graphite",
+    "identity_risk": "low",
+    "route": "semantic-svg",
+    "must_preserve": [
+      "single continuous mouse silhouette: elliptical dome, straight sides, elliptical bottom",
+      "scroll wheel as an overlay pill above the silhouette",
+      "one green lamp dot on the lower body"
+    ],
+    "must_not_add": [
+      "stroke",
+      "glow or shadow",
+      "gradient",
+      "text",
+      "rounded platform mask inside layers"
+    ],
+    "components": [
+      {
+        "id": "mouse-body",
+        "layer": "mouse body",
+        "format": "svg",
+        "spec_constraints": [
+          "single clean filled path",
+          "no stroke"
+        ]
+      },
+      {
+        "id": "wheel",
+        "layer": "scroll wheel",
+        "format": "svg",
+        "spec_constraints": [
+          "rounded rect overlay in background colour",
+          "no mask, no cutout"
+        ]
+      },
+      {
+        "id": "lamp",
+        "layer": "lamp",
+        "format": "svg",
+        "spec_constraints": [
+          "single circle",
+          "flat colour"
+        ]
+      }
+    ],
+    "acceptance_checks": [
+      "preview and app PNG inspected at full size and 64px",
+      "no svg_material_warnings"
+    ]
+  },
+  "fill": {
+    "solid": "extended-srgb: 0.137 0.137 0.153 1"
+  },
+  "rgb": "#232327",
+  "layers": [
+    {
+      "name": "background",
+      "svg": "<rect width=\"1024\" height=\"1024\" fill=\"#232327\"/>",
+      "composer": {
+        "include": false
+      }
+    },
+    {
+      "name": "mouse body",
+      "svg": "<path d=\"M512 150 C633.51 150 732 261.92 732 400 L732 700 C732 797.2 633.51 876 512 876 C390.49 876 292 797.2 292 700 L292 400 C292 261.92 390.49 150 512 150 Z\" fill=\"#EDEDEE\"/>",
+      "composer": {
+        "format": "svg",
+        "reason": "simple flat silhouette stays editable"
+      }
+    },
+    {
+      "name": "scroll wheel",
+      "svg": "<path d=\"M478 138 H546 V362 A34 34 0 0 1 478 362 Z\" fill=\"#232327\"/>",
+      "composer": {
+        "format": "svg",
+        "reason": "background-coloured overlay: an open groove from the top edge ending in the scroll wheel, no cutout"
+      }
+    },
+    {
+      "name": "lamp",
+      "svg": "<circle cx=\"512\" cy=\"622\" r=\"44\" fill=\"#46C98C\"/>",
+      "composer": {
+        "format": "svg",
+        "reason": "the one meaningful accent: connected lamp"
+      }
+    }
+  ]
+}

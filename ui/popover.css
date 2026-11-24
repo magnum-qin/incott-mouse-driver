@@ -1,0 +1,108 @@
+/**
+ * 托盘读数浮层样式（popover.html）。
+ * 复用 style.css 的设计变量，只定义浮层自己的排布 —— 窗口 268×180。
+ * 观感与主界面右侧的读数屏一致：内凹底 + 点阵 + 等宽数字。
+ */
+
+html, body { width: 100%; height: 100%; }
+
+body.popover {
+  padding: 13px 15px 0;
+  gap: 0;
+  border-radius: 6px;
+  background-color: var(--bg-inset);
+  background-image: radial-gradient(rgba(255, 255, 255, .05) 1px, transparent 1.4px);
+  background-size: 12px 12px;
+  background-position: 6px 6px;
+  box-shadow: inset 0 0 0 1px var(--border-strong), 0 14px 34px rgba(0, 0, 0, .62);
+  overflow: hidden;
+  cursor: default;
+}
+
+@keyframes pv-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: none; }
+}
+body.popover.pv-in { animation: pv-in 160ms ease-out; }
+
+/* ── 头部：连接灯 + 型号 + 档位 ── */
+.pv-head { display: flex; align-items: center; gap: 8px; }
+.pv-dot {
+  flex: none; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--text-muted);
+}
+.pv-dot.on { background: var(--success); box-shadow: var(--status-halo); }
+.pv-name {
+  font: 600 11px var(--font-mono); letter-spacing: .16em;
+  color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pv-state {
+  margin-left: auto; flex: none;
+  font: 400 10px var(--font-mono); color: var(--text-muted); white-space: nowrap;
+}
+
+/* ── 电量读数 ── */
+.pv-batt { display: flex; align-items: baseline; gap: 4px; margin-top: 8px; }
+.pv-num {
+  font: 400 28px/1 var(--font-mono); letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums; color: var(--text);
+}
+.pv-unit { font: 400 11px var(--font-mono); color: var(--text-dim); }
+/* 充电标在行的最右边（前面是 margin-left: auto），显隐不影响别的东西的位置，淡入淡出即可。
+   不用 .hidden（那是 display:none，硬切） */
+.pv-charge {
+  margin-left: auto; align-self: center;
+  font-size: 10.5px; font-weight: 600; color: var(--success);
+  opacity: 1; visibility: visible;
+  transition: opacity var(--t-fast, 120ms) var(--ease-out, ease-out), visibility 0s;
+}
+.pv-charge.gone {
+  opacity: 0; visibility: hidden;
+  transition: opacity var(--t-exit, 110ms) var(--ease-in, ease-in), visibility 0s linear var(--t-exit, 110ms);
+}
+
+.pv-track { height: 3px; margin-top: 8px; border-radius: 2px; background: var(--track); overflow: hidden; }
+/* 数字即时变化（上面），电量条可以滑过去 */
+.pv-fill {
+  display: block; height: 100%; width: 0; border-radius: 2px;
+  background: var(--success);
+  transition: width var(--t-settle, 220ms) var(--ease-out, ease-out), background-color var(--t-fast, 120ms) var(--ease-state, ease);
+}
+.pv-fill.mid { background: var(--warning); }
+.pv-fill.low { background: var(--danger); }
+.pv-fill.off { background: var(--border-strong); }
+
+/* ── 三列：DPI / 回报率 / 配置 ── */
+.pv-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+  margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--border-subtle);
+}
+.pv-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pv-k {
+  font: 400 10px var(--font-mono); letter-spacing: .06em; color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pv-v {
+  font: 400 13.5px var(--font-mono); color: var(--text); font-variant-numeric: tabular-nums;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pv-v small { font-size: 10px; color: var(--text-dim); margin-left: 2px; }
+/* 绿字 = 鼠标正在运行的那一份配置（与主界面底栏配置键、读数屏的含义一致） */
+.pv-v.run { color: var(--success); }
+/* 读数变了短促亮一下（.value-flash 的动画定义在共用的 style.css 里） */
+.pv-name.value-flash, .pv-state.value-flash, .pv-num.value-flash, .pv-v.value-flash { animation: value-flash 180ms var(--ease-out, ease-out); }
+.pv-v.dim { color: var(--text-muted); }
+
+/* ── 底部入口 ── */
+.pv-foot {
+  margin-top: auto; padding: 6px 0 9px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 10.5px; color: var(--text-muted); text-align: center;
+  cursor: pointer; user-select: none;
+  transition: color var(--t-fast) var(--ease-state);
+}
+.pv-foot:hover, .pv-foot:focus-visible { color: var(--text); outline: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

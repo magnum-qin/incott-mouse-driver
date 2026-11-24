@@ -1,0 +1,128 @@
+{
+  "name": "IncottLineMouse",
+  "target_platforms": [
+    "Windows"
+  ],
+  "source_reference": "design brief only: the app's own UI design language (ui/style.css tokens; the mouse line art in ui/index.html readout screen). No logo, no bitmap reference.",
+  "brief": "The readout-screen mouse: graphite stage, white outline mouse drawn as a thick ring made of two filled silhouettes, white scroll wheel, one green lamp dot.",
+  "semantic_review": {
+    "status": "exact-enough",
+    "identity_risk": "low",
+    "basis": "original concept authored in-task from the app's own design language; no external brand mark and no bitmap reference to reproduce",
+    "route": "semantic-svg",
+    "notes": "Outline built as a white silhouette with a smaller background-coloured silhouette on top (overlay-fill-layer), because strokes and boolean holes are not allowed in source assets. Thickness is deliberately 40 so the ring survives small sizes."
+  },
+  "app_context": {
+    "app_name": "Incott Mouse Driver",
+    "category": "desktop hardware configuration tool (mouse driver)",
+    "job_to_be_done": "let the user recognise the mouse driver in the taskbar, Start menu and installer at a glance",
+    "tone": "calm, precise, hardware-instrument; no AI-flavoured purple, glow or gradients"
+  },
+  "style_direction": "custom direction from the app UI (单色仪表台); nearest built-in family: black-stage-mark with overlay-created gaps",
+  "source_analysis": {
+    "fidelity_target": "the line-art mouse of the app's readout screen (dome, straight sides, rounded bottom, scroll wheel, lamp)",
+    "identity_risk": "low",
+    "route": "semantic-svg",
+    "must_preserve": [
+      "continuous outer ring with even side thickness",
+      "scroll wheel pill inside the ring",
+      "one green lamp dot on the lower body"
+    ],
+    "must_not_add": [
+      "stroke",
+      "boolean hole or mask",
+      "glow or shadow",
+      "gradient",
+      "text",
+      "rounded platform mask inside layers"
+    ],
+    "components": [
+      {
+        "id": "mouse-outer",
+        "layer": "mouse outline",
+        "format": "svg",
+        "spec_constraints": [
+          "single clean filled path",
+          "no stroke"
+        ]
+      },
+      {
+        "id": "mouse-inner",
+        "layer": "mouse outline cover",
+        "format": "svg",
+        "spec_constraints": [
+          "background-coloured overlay",
+          "no mask, no cutout"
+        ]
+      },
+      {
+        "id": "wheel",
+        "layer": "scroll wheel",
+        "format": "svg",
+        "spec_constraints": [
+          "rounded rect",
+          "flat colour"
+        ]
+      },
+      {
+        "id": "lamp",
+        "layer": "lamp",
+        "format": "svg",
+        "spec_constraints": [
+          "single circle",
+          "flat colour"
+        ]
+      }
+    ],
+    "acceptance_checks": [
+      "ring thickness even on all sides at full size",
+      "preview and app PNG inspected at 64px",
+      "no svg_material_warnings"
+    ]
+  },
+  "fill": {
+    "solid": "extended-srgb: 0.137 0.137 0.153 1"
+  },
+  "rgb": "#232327",
+  "layers": [
+    {
+      "name": "background",
+      "svg": "<rect width=\"1024\" height=\"1024\" fill=\"#232327\"/>",
+      "composer": {
+        "include": false
+      }
+    },
+    {
+      "name": "mouse outline",
+      "svg": "<path d=\"M512 150 C633.51 150 732 261.92 732 400 L732 700 C732 797.2 633.51 876 512 876 C390.49 876 292 797.2 292 700 L292 400 C292 261.92 390.49 150 512 150 Z\" fill=\"#EDEDEE\"/>",
+      "composer": {
+        "format": "svg",
+        "reason": "outer silhouette of the ring"
+      }
+    },
+    {
+      "name": "mouse outline cover",
+      "svg": "<path d=\"M512 194 C611.41 194 692 285.33 692 398 L692 698 C692 773.11 611.41 834 512 834 C412.59 834 332 773.11 332 698 L332 398 C332 285.33 412.59 194 512 194 Z\" fill=\"#232327\"/>",
+      "composer": {
+        "format": "svg",
+        "reason": "background-coloured overlay that turns the silhouette into a ring without a cutout"
+      }
+    },
+    {
+      "name": "scroll wheel",
+      "svg": "<rect x=\"482\" y=\"266\" width=\"60\" height=\"132\" rx=\"30\" fill=\"#EDEDEE\"/>",
+      "composer": {
+        "format": "svg",
+        "reason": "scroll wheel inside the ring"
+      }
+    },
+    {
+      "name": "lamp",
+      "svg": "<circle cx=\"512\" cy=\"616\" r=\"42\" fill=\"#46C98C\"/>",
+      "composer": {
+        "format": "svg",
+        "reason": "the one meaningful accent: connected lamp"
+      }
+    }
+  ]
+}

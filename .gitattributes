@@ -1,0 +1,3 @@
+# 文本文件入库和检出都用 LF，不受各人 core.autocrlf 设置的影响（Git for Windows 默认会在检出时改成 CRLF）。
+# .ps1 带 BOM、LF 在 PowerShell 里照常可用
+* text=auto eol=lf

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>状态联系表</title>
+  <style>
+    html, body { margin: 0; overflow: hidden; background: #565b62; }
+    #grid { display: grid; gap: 8px; padding: 8px; grid-template-columns: repeat(var(--cols), max-content); }
+    .frame { width: calc(1080px * var(--s)); height: calc(720px * var(--s)); overflow: hidden; }
+    .frame iframe { display: block; width: 1080px; height: 720px; border: 0; transform: scale(var(--s)); transform-origin: 0 0; }
+  </style>
+</head>
+<body>
+  <!--
+    把多个预览状态拼成一张图（逐状态校对用）：
+      /design/preview/sheet.html?cols=2&q=tab%3Dbuttons&q=state%3Doff&q=...
+    每个 q 是一帧（整个参数串要 URL 编码），原样透传给预览页，静帧参数自动加上。
+    比例用 s= 指定（默认 0.5）；截图时窗口宽高 = 列数 × 1080 × s + 边距（边距 16，间隔 8）。
+  -->
+  <div id="grid"></div>
+  <script>
+    const p = new URLSearchParams(location.search);
+    const s = p.get('s') || '0.5';
+    const grid = document.getElementById('grid');
+    grid.style.setProperty('--cols', p.get('cols') || '2');
+    grid.style.setProperty('--s', s);
+    for (const q of p.getAll('q')) {
+      const frame = document.createElement('div');
+      frame.className = 'frame';
+      const iframe = document.createElement('iframe');
+      const inner = new URLSearchParams(q);
+      inner.set('still', '1');
+      iframe.src = `/design/preview/index.html?${inner}`;
+      frame.appendChild(iframe);
+      grid.appendChild(frame);
+    }
+  </script>
+</body>
+</html>

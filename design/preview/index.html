@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>预览 · Incott Mouse Driver</title>
+</head>
+<body>
+  <!--
+    设计预览入口：取真实界面（ui/index.html 或 ui/popover.html）的 HTML，
+    注入模拟层后原位替换本页 —— URL 不变，所以参数照常可读，
+    生产代码里不需要任何「预览模式」分支。
+
+    用法：/design/preview/index.html?tab=performance&lang=en   （其余参数见 mock.js）
+          /design/preview/index.html?page=popover             托盘浮层
+  -->
+  <script type="module">
+    const q = new URLSearchParams(location.search);
+    const page = q.get('page') === 'popover' ? '/ui/popover.html' : '/ui/index.html';
+    let html = await (await fetch(page, { cache: 'no-store' })).text();
+    // still=1：关掉过渡与动画，截图时状态确定（不会停在动画起始帧）
+    const still = q.has('still')
+      ? '<style>*, *::before, *::after { transition: none !important; animation: none !important; }</style>'
+      : '';
+    // css=<URL 编码的样式>：临时盖一层样式再截图，用来并排比较几个候选方案（只影响这一次截图）
+    const css = q.has('css') ? `<style>${q.get('css').replace(/</g, '&lt;')}</style>` : '';
+    const inject = [
+      '<script src="/design/preview/mock.js"><\/script>',
+      still,
+      css,
+      // 窗口本身透明：这里垫一个中性桌面色，圆角和描边才看得出来
+      '<style id="preview-backdrop">html { background: #565b62; }</style>',
+    ].join('\n  ');
+    if (!html.includes('</head>')) throw new Error('界面 HTML 缺少 </head>');
+    // 文档被原位替换后 URL 仍是预览页的，界面里的相对路径（style.css、bridge/*.js）
+    // 需要显式指回 /ui/
+    html = html.replace('<head>', '<head>\n  <base href="/ui/">');
+    html = html.replace('</head>', `${inject}\n</head>`);
+    document.open();
+    document.write(html);
+    document.close();
+  </script>
+</body>
+</html>

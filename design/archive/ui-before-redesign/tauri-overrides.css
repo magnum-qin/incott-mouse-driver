@@ -1,0 +1,33 @@
+/*
+ * Tauri 版界面覆盖 —— 与上游 Electron 版的差异都在这里，方便以后对齐回上游。
+ */
+
+/* 自动更新入口已按需求移除（上游指向作者的 Electron 安装包，对本版无意义；
+   恢复方法见 README「自动更新」一节） */
+.update-top,
+.settings-item-update {
+  display: none !important;
+}
+
+/* 板载配置行为差异：点击只切换编辑中的配置，点「应用到鼠标」才写入鼠标。
+   .active = 编辑中（蓝色，上游原有）；.in-use = 鼠标正在运行（绿色角标） */
+.profile-btn.in-use {
+  position: relative;
+  border-color: var(--success);
+  color: var(--success);
+}
+.profile-btn.in-use::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--success);
+}
+.profile-btn.active.in-use {
+  border-color: var(--success);
+  color: var(--success);
+  box-shadow: inset 0 0 0 1px var(--success-border, var(--success));
+}

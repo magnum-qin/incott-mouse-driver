@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost" />
+  <title>Incott Mouse Driver</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- 标题栏：兼作拖动区，窗口按钮贴顶（46×32） -->
+  <header class="titlebar">
+    <div class="brand">
+      <span class="led" aria-hidden="true"></span>
+      <span class="brand-name">INCOTT</span>
+      <span class="brand-sub" data-i18n="brandSub">鼠标驱动</span>
+    </div>
+    <div class="status">
+      <span class="link" id="deviceLink">
+        <span class="led round off" id="deviceLed" aria-hidden="true"></span>
+        <span id="deviceLabel" data-i18n="notConnected">未连接设备</span>
+      </span>
+      <span id="deviceSpinner" class="spinner hidden" aria-hidden="true"></span>
+      <span id="deviceInfo" class="model hidden"></span>
+      <button id="battery" class="batt hidden" type="button" data-i18n-title="batteryHint">
+        <span class="cell" aria-hidden="true"></span><span id="batteryVal">--</span>%
+      </button>
+      <div class="settings-wrap">
+        <button id="settingsBtn" class="key icon" type="button" data-title="settings" data-i18n-title="settingsTitle">
+          <svg class="ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M3.4 6.2h13.2M3.4 13.8h13.2"/><circle cx="7.6" cy="6.2" r="2.1"/><circle cx="12.9" cy="13.8" r="2.1"/></svg>
+        </button>
+        <div id="settingsMenu" class="pop settings-menu hidden">
+          <label class="settings-item">
+            <input type="checkbox" id="setAutoLaunch" />
+            <span class="tog" aria-hidden="true"></span>
+            <span class="settings-text">
+              <span data-i18n="settingsAutoLaunch">开机自启</span>
+              <span class="settings-desc" data-i18n="settingsAutoLaunchDesc">登录 Windows 后自动运行</span>
+            </span>
+          </label>
+          <label class="settings-item" id="setSilentItem">
+            <input type="checkbox" id="setSilentStart" />
+            <span class="tog" aria-hidden="true"></span>
+            <span class="settings-text">
+              <span data-i18n="settingsSilentStart">静默启动</span>
+              <span class="settings-desc" data-i18n="settingsSilentStartDesc">启动时不弹窗，只驻留托盘</span>
+            </span>
+          </label>
+          <label class="settings-item settings-item-select">
+            <span class="settings-text">
+              <span data-i18n="settingsUiScale">界面缩放</span>
+              <span class="settings-desc" data-i18n="settingsUiScaleDesc">按屏幕尺寸自动适配，也可手动指定</span>
+            </span>
+            <select id="setUiScale" class="key sel scale-select">
+              <option value="auto" data-i18n="scaleAuto">自动</option>
+              <option value="1">100%</option>
+              <option value="1.1">110%</option>
+              <option value="1.25">125%</option>
+              <option value="1.5">150%</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <div class="lang-wrap">
+        <button id="langBtn" class="key icon" type="button" title="Language" aria-label="Language">
+          <svg class="ico" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.2"/><path d="M2.8 10h14.4M10 2.8c1.9 2 2.9 4.5 2.9 7.2S11.9 15.2 10 17.2C8.1 15.2 7.1 12.7 7.1 10S8.1 4.8 10 2.8z"/></svg>
+        </button>
+        <div id="langMenu" class="pop lang-menu hidden">
+          <button type="button" class="lang-option active" data-lang="zh">中文</button>
+          <button type="button" class="lang-option" data-lang="en">English</button>
+        </div>
+      </div>
+      <button id="connectBtn" class="key ui strong" type="button" data-i18n="connect">连接鼠标</button>
+    </div>
+    <!-- 窗口控制：和左边的设置 / 语言键是同一种键（.key.icon），样式见 style.css 的「窗口控制」 -->
+    <div class="winctl">
+      <button id="winMin" class="key icon" type="button" title="最小化" aria-label="最小化">
+        <svg class="ico" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 6h6"/></svg>
+      </button>
+      <button id="winMax" class="key icon" type="button" title="最大化" aria-label="最大化">
+        <svg class="ico" viewBox="0 0 12 12" aria-hidden="true" id="winMaxIcon"><rect x="3" y="3" width="6" height="6" rx="1"/></svg>
+      </button>
+      <button id="winClose" class="key icon close" type="button" title="关闭" aria-label="关闭">
+        <svg class="ico" viewBox="0 0 12 12" aria-hidden="true"><path d="M3.4 3.4l5.2 5.2M8.6 3.4L3.4 8.6"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="work">
+    <!-- 编号菜单：当前项亮一颗白灯 -->
+    <nav class="menu">
+      <button type="button" class="active" data-page="dpi"><span class="no">01</span><span data-i18n="navDpi">DPI</span></button>
+      <button type="button" data-page="buttons"><span class="no">02</span><span data-i18n="navButtons">按键</span></button>
+      <button type="button" data-page="performance"><span class="no">03</span><span data-i18n="navPerformance">性能</span></button>
+      <button type="button" data-page="macro"><span class="no">04</span><span data-i18n="navMacro">宏</span></button>
+      <div class="ver">
+        <button id="repoLink" class="key icon" type="button" title="GitHub" aria-label="GitHub">
+          <svg class="ico" viewBox="0 0 20 20" aria-hidden="true" style="fill:currentColor;stroke:none"><path d="M10 1.9a8.1 8.1 0 0 0-2.6 15.8c.4.1.6-.2.6-.4v-1.5c-2.3.5-2.8-1.1-2.8-1.1-.4-1-.9-1.2-.9-1.2-.8-.5.1-.5.1-.5.8.1 1.3.9 1.3.9.7 1.3 1.9 1 2.4.7.1-.5.3-1 .5-1.2-1.8-.2-3.7-.9-3.7-4.1 0-.9.3-1.6.8-2.2-.1-.2-.4-1 .1-2.1 0 0 .7-.2 2.2.8a7.5 7.5 0 0 1 4 0c1.5-1 2.2-.8 2.2-.8.5 1.1.2 1.9.1 2.1.5.6.8 1.3.8 2.2 0 3.2-1.9 3.9-3.7 4.1.3.3.6.8.6 1.6v2.4c0 .2.2.5.6.4A8.1 8.1 0 0 0 10 1.9z"/></svg>
+        </button>
+        <button id="appVersion" class="ver-no" type="button" data-i18n-title="menuAbout">v—</button>
+      </div>
+    </nav>
+
+    <main class="main">
+      <!-- 01 DPI：档位通道条 -->
+      <section class="page active" data-page="dpi">
+        <div class="page-head">
+          <h2><span class="no">01</span><span data-i18n="dpiTitle">DPI 档位</span></h2>
+          <label class="togl">
+            <input type="checkbox" id="xySplit" />
+            <span class="tog" aria-hidden="true"></span>
+            <span data-i18n="xySplit">XY 轴单独调节</span>
+          </label>
+        </div>
+        <p class="page-hint" data-i18n="dpiHint">拖动推子或直接输入，数值是 50 的倍数；鼠标上的 DPI 键在各档位间切换。</p>
+        <div id="dpiList" class="stages"></div>
+        <div class="stage-foot">
+          <button id="addDpiBtn" class="key ui strong" type="button" data-i18n="addDpi">+ 新增档位</button>
+          <span class="note" data-i18n="dpiColorNote">档位灯的颜色只用于区分档位。</span>
+        </div>
+      </section>
+
+      <!-- 02 按键映射 -->
+      <section class="page" data-page="buttons">
+        <div class="page-head"><h2><span class="no">02</span><span data-i18n="buttonsTitle">按键映射</span></h2></div>
+        <div id="buttonList" class="blist"></div>
+      </section>
+
+      <!-- 03 性能：参数表（灯效并入最后一行） -->
+      <section class="page" data-page="performance">
+        <div class="page-head"><h2><span class="no">03</span><span data-i18n="performanceTitle">性能参数</span></h2></div>
+        <div class="panel">
+          <h3 data-i18n="paramPanel">参数</h3>
+          <div class="prow">
+            <span class="no">01</span><span class="plabel" data-i18n="reportRate">回报率</span>
+            <div id="rateList" class="ctl gap6"></div>
+          </div>
+          <div class="prow">
+            <span class="no">02</span><span class="plabel" data-i18n="lod">LOD</span>
+            <div id="lodList" class="ctl gap6"></div>
+          </div>
+          <div class="prow">
+            <span class="no">03</span><span class="plabel" data-i18n="sensorMode">性能模式</span>
+            <div id="modeList" class="ctl gap6"></div>
+          </div>
+          <div class="prow">
+            <span class="no">04</span><span class="plabel" data-i18n="sensorOptions">传感器修正</span>
+            <div class="ctl">
+              <label class="togl"><input type="checkbox" id="motionSync" /><span class="tog" aria-hidden="true"></span><span data-i18n="motionSync">运动同步</span></label>
+              <label class="togl"><input type="checkbox" id="angleSnap" /><span class="tog" aria-hidden="true"></span><span data-i18n="angleSnap">直线修正</span></label>
+              <label class="togl"><input type="checkbox" id="ripple" /><span class="tog" aria-hidden="true"></span><span data-i18n="ripple">波纹修正</span></label>
+            </div>
+          </div>
+          <div class="prow">
+            <span class="no">05</span><span class="plabel" data-i18n="debounce">按键响应</span>
+            <div class="ctl">
+              <span class="stepper">
+                <button id="debounceDown" class="key sq" type="button" aria-label="−">−</button>
+                <input id="debounce" class="sval" type="number" min="0" max="30" value="8" data-i18n-title="debounceDesc" />
+                <span class="unit">ms</span>
+                <button id="debounceUp" class="key sq" type="button" aria-label="+">+</button>
+              </span>
+            </div>
+          </div>
+          <div class="prow">
+            <span class="no">06</span><span class="plabel" data-i18n="sleepTime">节能</span>
+            <div class="ctl">
+              <span class="stepper">
+                <button id="sleepDown" class="key sq" type="button" aria-label="−">−</button>
+                <span id="sleepValue" class="sval">60</span>
+                <span class="unit">s</span>
+                <button id="sleepUp" class="key sq" type="button" aria-label="+">+</button>
+              </span>
+            </div>
+          </div>
+          <div class="prow">
+            <span class="no">07</span><span class="plabel" data-i18n="ledReceiverTitle">接收器灯</span>
+            <div id="ledList" class="ctl gap6"></div>
+          </div>
+          <div id="perfNote" class="pnote"></div>
+        </div>
+      </section>
+
+      <!-- 04 宏 -->
+      <section class="page" data-page="macro">
+        <div class="page-head"><h2><span class="no">04</span><span data-i18n="macroTitle">宏</span></h2></div>
+        <div id="macroSlots" class="slots"></div>
+        <div class="macro-grid">
+          <div class="stack">
+            <div class="panel">
+              <h3 data-i18n="loopType">循环</h3>
+              <div class="frow">
+                <span class="flabel" data-i18n="loopMode">方式</span>
+                <div class="grow">
+                  <select id="macroLoopType" class="key sel">
+                    <option value="0" data-i18n="loopHold">按住循环</option>
+                    <option value="1" data-i18n="loopAnyKey">循环直到任意键按下</option>
+                    <option value="2" data-i18n="loopN">循环</option>
+                  </select>
+                </div>
+              </div>
+              <div class="frow" id="macroCycleRow">
+                <span class="flabel" data-i18n="cycleCount">次数</span>
+                <div class="grow">
+                  <span class="stepper">
+                    <input id="macroCycle" class="sval" type="number" min="1" value="1" />
+                    <span class="unit" data-i18n="times">次</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div class="panel">
+              <h3 data-i18n="addAction">添加动作</h3>
+              <div class="frow">
+                <span class="flabel" data-i18n="keyLabel">按键</span>
+                <div class="grow"><select id="macroKeySel" class="key sel"></select></div>
+              </div>
+              <div class="frow">
+                <span class="flabel" data-i18n="direction">方向</span>
+                <div class="grow">
+                  <span class="seg" id="macroPressSeg">
+                    <button type="button" class="key ui lit" data-press="1" data-i18n="press">按下</button>
+                    <button type="button" class="key ui" data-press="0" data-i18n="release">释放</button>
+                  </span>
+                </div>
+              </div>
+              <div class="frow">
+                <span class="flabel" data-i18n="delay">延迟</span>
+                <div class="grow">
+                  <span class="stepper">
+                    <button id="macroDelayDown" class="key sq" type="button" aria-label="−">−</button>
+                    <input id="macroDelay" class="sval" type="number" min="0" max="60000" value="50" data-i18n-title="delayMs" />
+                    <span class="unit">ms</span>
+                    <button id="macroDelayUp" class="key sq" type="button" aria-label="+">+</button>
+                  </span>
+                </div>
+              </div>
+              <div class="frow"><button id="macroAddBtn" class="key ui strong grow" type="button" data-i18n="addActionBtn">+ 添加</button></div>
+            </div>
+          </div>
+          <div class="panel">
+            <h3><span data-i18n="actions">动作</span><span id="macroCount" class="mono" style="font-weight:400;color:var(--text-muted)">0 / 70</span></h3>
+            <div id="macroItems" class="items"></div>
+          </div>
+        </div>
+        <div class="macro-foot">
+          <button id="macroImportBtn" class="key ui strong" type="button" data-i18n="importMacroFile">导入宏</button>
+          <button id="macroExportBtn" class="key ui strong" type="button" data-i18n="exportMacroFile">导出宏</button>
+          <span class="spacer"></span>
+          <span id="macroStatus" class="status-text" role="status" aria-live="polite"></span>
+          <button id="macroUploadBtn" class="cta" type="button" data-i18n="uploadMacro">上传到鼠标</button>
+        </div>
+      </section>
+    </main>
+
+    <!-- 读数屏：常驻，反映鼠标当前的实际状态（不是编辑中的值） -->
+    <aside class="readout" aria-label="device">
+      <div class="screen" id="screen">
+        <div class="screen-head">
+          <span class="led round off" id="screenLed" aria-hidden="true"></span>
+          <span class="lbl" data-i18n="panelDevice">设备</span>
+          <span class="name" id="screenName">—</span>
+        </div>
+        <div class="art" id="screenArt" aria-hidden="true">
+          <svg viewBox="0 0 120 168">
+            <ellipse class="mouse-shadow" cx="60" cy="158" rx="30" ry="5" />
+            <path class="mouse-outline" d="M60 6c19 0 34 16 34 40v56c0 26-13 40-34 40S26 128 26 102V46C26 22 41 6 60 6z" />
+            <path class="mouse-seamL" d="M60 6.5V56M60 56c-8.5 0-14-5-14-11.5" />
+            <path class="mouse-seamR" d="M60 56c8.5 0 14-5 14-11.5" />
+            <rect class="mouse-wheel" x="56" y="30" width="8" height="18" rx="4" />
+            <circle class="mouse-led" cx="60" cy="96" r="7" />
+          </svg>
+        </div>
+        <div class="hero off" id="screenDpi">—</div>
+        <div class="sub" id="screenSub">&nbsp;</div>
+        <div class="rows">
+          <div class="srow"><span class="k" data-i18n="reportRate">回报率</span><span class="v off" id="screenRate">—</span></div>
+          <div class="srow"><span class="k" data-i18n="batteryLabel">电量</span><span class="v off" id="screenBattery">—</span></div>
+          <div class="srow"><span class="k" data-i18n="statProfile">配置</span><span class="v off" id="screenProfile">—</span></div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- 底栏：配置键（白灯 = 编辑中，绿灯 = 鼠标正在运行）+ 未应用指示 + 应用 -->
+  <footer class="bottombar">
+    <span class="lbl" data-i18n="onboardConfig" data-i18n-title="profileNotOnHardware">配置</span>
+    <div id="profileBar" class="profiles"></div>
+    <span class="apply-state hidden" id="applyState" role="status" aria-live="polite">
+      <span class="led" id="applyLed" aria-hidden="true"></span>
+      <span class="status-text" id="applyStateText"></span>
+    </span>
+    <span class="spacer"></span>
+    <button id="importBtn" class="key ui strong" type="button" data-i18n="importConfig">导入配置</button>
+    <button id="exportBtn" class="key ui strong" type="button" data-i18n="exportConfig">导出配置</button>
+    <button id="applyBtn" class="cta idle" type="button" disabled data-i18n="apply">应用到鼠标</button>
+  </footer>
+
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+  <!-- 桥接层必须先于 app.js 执行（组装 window.api/i18n/keynames） -->
+  <script type="module" src="bridge/main-init.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+node_modules/
+src-tauri/target/
+src-tauri/gen/schemas/
+dist/
+*.log
+
+# 设计校对时生成的截图（随用随删，不进仓库；README 用的配图在 docs/screenshots/）
+design/shots/
+
+# 本机编程助手的会话文件
+.zcode/
+
+# 图标技能生成的报告和说明（里面记着本机的绝对路径）；图标的源文件 tmp/work/ 要留着
+design/icon/*/tmp/reports/
+design/icon/*/tmp/README.md

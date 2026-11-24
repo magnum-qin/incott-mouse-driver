@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>UI/UX 方案候选 · Incott Mouse Driver</title>
+  <style>
+    :root { --s: .5; --gap: 20px; --cols: 3; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      background: #565b62; color: #f2f3f5;
+      font: 14px/1.5 "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    header { flex: none; padding: 18px 28px 0; }
+    h1 {
+      margin: 0;
+      font: 600 20px/1.3 "Segoe UI Variable Display", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+      letter-spacing: -.01em;
+    }
+    header p { margin: 4px 0 0; max-width: 960px; color: #d0d4da; font-size: 13px; }
+    main { flex: 1; min-height: 0; padding: 16px 28px 22px; }
+    .grid {
+      display: grid; height: 100%;
+      grid-template-columns: repeat(var(--cols), max-content);
+      grid-auto-rows: max-content; gap: var(--gap);
+      justify-content: center; align-content: center;
+    }
+    .card { display: flex; flex-direction: column; gap: 8px; }
+    .card-head { width: calc(1080px * var(--s)); min-height: 46px; }
+    .card-title { display: flex; align-items: center; gap: 10px; }
+    .badge {
+      flex: none; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 6px;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: #fff; color: #1b1b1b; font-weight: 700; font-size: 13px;
+    }
+    .name { font-weight: 600; font-size: 14px; }
+    .links { margin-left: auto; font-size: 12px; }
+    .links a { color: #d0d4da; text-decoration: underline; text-decoration-color: rgba(255, 255, 255, .35); text-underline-offset: 3px; }
+    .links a:hover { color: #fff; }
+    .desc { margin-top: 2px; color: #c9cdd3; font-size: 12px; line-height: 1.45; }
+    .frame {
+      width: calc(1080px * var(--s)); height: calc(720px * var(--s));
+      overflow: hidden; border-radius: calc(10px * var(--s));
+      box-shadow: 0 12px 32px rgba(0, 0, 0, .38);
+    }
+    .frame iframe {
+      display: block; width: 1080px; height: 720px; border: 0;
+      transform: scale(var(--s)); transform-origin: 0 0;
+    }
+    body.bare header { display: none; }
+    body.bare .card-head { display: none; }
+    body.bare main { padding: 8px; }
+    body.bare { --gap: 8px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>UI/UX 方案候选</h1>
+    <p>
+      都在你选定的风格里（D 的形态 + B 的配色）。三个方案共同改了：右侧常驻读数屏、灯效并入性能参数、
+      说明文字只留必要的一两句、底栏显示「几项未应用」且没有修改时「应用到鼠标」是熄灭的。
+      数据是写死的，但可以切页、点按键、拨开关、拖推子。选定后回复「方案一 / 二 / 三」即可。
+    </p>
+  </header>
+  <main><div class="grid" id="grid"></div></main>
+
+  <script type="module">
+    const SCHEMES = [
+      { id: 'menu', no: '一', name: '左侧编号菜单', desc: '你选的 D 的样子：左侧编号菜单，右侧常驻读数屏。四个页面各管一件事，最安静。' },
+      { id: 'tabs', no: '二', name: '顶部页签', desc: '页签挪到顶部，省出左边 168px：推子更长，参数表更宽松。竖向少了一栏。' },
+      { id: 'single', no: '三', name: '单屏双页', desc: '日常调校（档位 + 参数）全在一屏，按键和宏在第二屏。点得最少，也最密。' },
+    ];
+    const q = new URLSearchParams(location.search);
+    const cols = Math.max(1, Number(q.get('cols') || (innerWidth >= 1500 ? 3 : innerWidth >= 1000 ? 2 : 1)));
+    if (q.has('bare')) document.body.classList.add('bare');
+
+    const grid = document.getElementById('grid');
+    const root = document.documentElement;
+    root.style.setProperty('--cols', cols);
+    for (const s of SCHEMES) {
+      const card = document.createElement('section');
+      card.className = 'card';
+      card.innerHTML = `
+        <div class="card-head">
+          <div class="card-title">
+            <span class="badge">方案${s.no}</span><span class="name">${s.name}</span>
+            <span class="links"><a href="/design/archive/mockups/${s.id}.html" target="_blank" rel="opener">原尺寸打开 ↗</a></span>
+          </div>
+          <div class="desc">${s.desc}</div>
+        </div>`;
+      const frame = document.createElement('div');
+      frame.className = 'frame';
+      const iframe = document.createElement('iframe');
+      iframe.src = `/design/archive/mockups/${s.id}.html`;
+      frame.appendChild(iframe);
+      card.append(frame);
+      grid.appendChild(card);
+    }
+
+    // 一屏放完：按窗口大小反算缩放比例
+    const header = document.querySelector('header');
+    const layout = () => {
+      const rows = Math.ceil(SCHEMES.length / cols);
+      const bare = document.body.classList.contains('bare');
+      const padX = bare ? 8 : 28;
+      const padTop = bare ? 8 : 16;
+      const padBottom = bare ? 8 : 22;
+      const gap = bare ? 8 : 20;
+      const headH = bare ? 0 : header.offsetHeight;
+      const cardHead = bare ? 0 : grid.querySelector('.card-head')?.offsetHeight || 46;
+      const aw = (innerWidth - padX * 2 - gap * (cols - 1)) / cols;
+      const ah = (innerHeight - headH - padTop - padBottom - gap * (rows - 1)) / rows - cardHead - (bare ? 0 : 8);
+      root.style.setProperty('--s', Math.max(0.2, Math.min(aw / 1080, ah / 720, 1)).toFixed(4));
+      root.style.setProperty('--gap', `${gap}px`);
+    };
+    requestAnimationFrame(layout);
+    addEventListener('resize', layout);
+  </script>
+</body>
+</html>

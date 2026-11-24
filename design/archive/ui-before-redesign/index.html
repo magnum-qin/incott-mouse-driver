@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost" />
+  <title>Incott Mouse Driver</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="tauri-overrides.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      <span class="brand-name">INCOTT</span>
+      <span class="brand-sub" data-i18n="brandSub">鼠标驱动</span>
+    </div>
+    <div class="device-bar">
+      <span id="deviceStatus" class="status-dot off"></span>
+      <span id="deviceSpinner" class="spinner hidden"></span>
+      <span id="deviceLabel" class="device-label" data-i18n="notConnected">未连接设备</span>
+      <span id="deviceInfo" class="device-info hidden"></span>
+      <span id="battery" class="battery hidden" tabindex="0" role="button">
+        <span class="battery-icon">🔋</span><span id="batteryVal">--</span>%
+      </span>
+      <button id="updateTopBtn" class="btn btn-ghost icon-btn update-top" title="检查更新" aria-label="检查更新">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3.4v7.8"/><path d="M6.8 8.6 10 11.8l3.2-3.2"/><path d="M4.2 14.4v1.2a1.2 1.2 0 0 0 1.2 1.2h9.2a1.2 1.2 0 0 0 1.2-1.2v-1.2"/></svg>
+      </button>
+      <div class="settings-wrap">
+        <button id="settingsBtn" class="btn btn-ghost icon-btn" title="设置" aria-label="设置">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.4 6.2h13.2M3.4 13.8h13.2"/><circle cx="7.6" cy="6.2" r="2.1" class="dot-solid"/><circle cx="12.9" cy="13.8" r="2.1" class="dot-solid"/></svg>
+        </button>
+        <div id="settingsMenu" class="settings-menu hidden">
+          <label class="settings-item">
+            <input type="checkbox" id="setAutoLaunch" />
+            <span class="settings-text">
+              <span data-i18n="settingsAutoLaunch">开机自启</span>
+              <span class="settings-desc" data-i18n="settingsAutoLaunchDesc">登录 Windows 后自动运行</span>
+            </span>
+          </label>
+          <label class="settings-item">
+            <input type="checkbox" id="setSilentStart" />
+            <span class="settings-text">
+              <span data-i18n="settingsSilentStart">静默启动</span>
+              <span class="settings-desc" data-i18n="settingsSilentStartDesc">启动时不弹窗，只驻留托盘</span>
+            </span>
+          </label>
+          <label class="settings-item settings-item-select">
+            <span class="settings-text">
+              <span data-i18n="settingsUiScale">界面缩放</span>
+              <span class="settings-desc" data-i18n="settingsUiScaleDesc">按屏幕尺寸自动适配，也可手动指定</span>
+            </span>
+            <select id="setUiScale" class="scale-select">
+              <option value="auto" data-i18n="scaleAuto">自动</option>
+              <option value="1">100%</option>
+              <option value="1.1">110%</option>
+              <option value="1.25">125%</option>
+              <option value="1.5">150%</option>
+            </select>
+          </label>
+          <div class="settings-item settings-item-update">
+            <span class="settings-text">
+              <span data-i18n="settingsUpdate">软件更新</span>
+              <span class="settings-desc" id="updateStatus" data-i18n="settingsUpdateIdle">检查是否有新版本</span>
+            </span>
+            <button type="button" id="updateBtn" class="update-btn" data-i18n="updateCheck">检查</button>
+          </div>
+        </div>
+      </div>
+      <div class="lang-wrap">
+        <button id="langBtn" class="btn btn-ghost lang-btn icon-btn" title="Language" aria-label="Language">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.2"/><path d="M2.8 10h14.4M10 2.8c1.9 2 2.9 4.5 2.9 7.2S11.9 15.2 10 17.2C8.1 15.2 7.1 12.7 7.1 10S8.1 4.8 10 2.8z"/></svg>
+        </button>
+        <div id="langMenu" class="lang-menu hidden">
+          <button class="lang-option" data-lang="zh">中文</button>
+          <button class="lang-option" data-lang="en">English</button>
+        </div>
+      </div>
+      <button id="connectBtn" class="btn btn-primary" data-i18n="connect">连接鼠标</button>
+    </div>
+    <div class="win-controls">
+      <button id="winMin" class="win-btn" title="最小化" aria-label="最小化">
+        <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 6h6"/></svg>
+      </button>
+      <button id="winMax" class="win-btn" title="最大化" aria-label="最大化">
+        <svg viewBox="0 0 12 12" aria-hidden="true" id="winMaxIcon"><rect x="3" y="3" width="6" height="6" rx="1"/></svg>
+      </button>
+      <button id="winClose" class="win-btn win-btn-close" title="关闭" aria-label="关闭">
+        <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3.4 3.4l5.2 5.2M8.6 3.4L3.4 8.6"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar">
+      <button class="nav-item active" data-tab="dpi">
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="6.2"/><path d="M10 1.6v3.2M10 15.2v3.2M1.6 10h3.2M15.2 10h3.2"/><circle cx="10" cy="10" r="1.8" class="dot"/></svg></span><span data-i18n="navDpi">DPI</span>
+      </button>
+      <button class="nav-item" data-tab="buttons">
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><rect x="5.2" y="2.6" width="9.6" height="14.8" rx="4.8"/><path d="M10 2.8v4.1M5.4 7.2h9.2"/></svg></span><span data-i18n="navButtons">键位设置</span>
+      </button>
+      <button class="nav-item" data-tab="performance">
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M3.1 15.2a7.4 7.4 0 1 1 13.8 0"/><path d="M10 15.2l3.3-4.6"/><circle cx="10" cy="15.4" r="1.4" class="dot"/></svg></span><span data-i18n="navPerformance">性能设置</span>
+      </button>
+      <button class="nav-item" data-tab="macro">
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><rect x="2.8" y="3.4" width="14.4" height="13.2" rx="2.6"/><path d="M6.2 7.4h4.2M6.2 10.4h7.6M6.2 13.4h5.2"/><path d="M13.4 6.6l1.9 1.9-1.9 1.9" class="accent-stroke"/></svg></span><span data-i18n="navMacro">录制宏</span>
+      </button>
+      <button class="nav-item" data-tab="lighting">
+        <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M10 2.2c2.9 0 5 2.1 5 4.9 0 1.9-1 3.1-1.9 4.1-.6.7-.9 1.2-.9 2H7.8c0-.8-.3-1.3-.9-2-.9-1-1.9-2.2-1.9-4.1 0-2.8 2.1-4.9 5-4.9z"/><path d="M8.2 16.6h3.6"/></svg></span><span data-i18n="navLighting">灯效</span>
+      </button>
+      <div class="sidebar-foot">
+        <a id="repoLink" class="repo-link" title="GitHub">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 1.9a8.1 8.1 0 0 0-2.6 15.8c.4.1.6-.2.6-.4v-1.5c-2.3.5-2.8-1.1-2.8-1.1-.4-1-.9-1.2-.9-1.2-.8-.5.1-.5.1-.5.8.1 1.3.9 1.3.9.7 1.3 1.9 1 2.4.7.1-.5.3-1 .5-1.2-1.8-.2-3.7-.9-3.7-4.1 0-.9.3-1.6.8-2.2-.1-.2-.4-1 .1-2.1 0 0 .7-.2 2.2.8a7.5 7.5 0 0 1 4 0c1.5-1 2.2-.8 2.2-.8.5 1.1.2 1.9.1 2.1.5.6.8 1.3.8 2.2 0 3.2-1.9 3.9-3.7 4.1.3.3.6.8.6 1.6v2.4c0 .2.2.5.6.4A8.1 8.1 0 0 0 10 1.9z"/></svg>
+        </a>
+        <span id="appVersion" class="sidebar-ver">v—</span>
+      </div>
+    </nav>
+
+    <main class="content">
+      <!-- DPI -->
+      <section id="tab-dpi" class="tab active">
+        <div class="tab-header">
+          <h2 data-i18n="dpiTitle">DPI灵敏度调节</h2>
+          <label class="switch-label">
+            <input type="checkbox" id="xySplit" />
+            <span class="switch"></span>
+            <span data-i18n="xySplit">XY轴单独调节</span>
+          </label>
+        </div>
+        <p class="hint" data-i18n="dpiHint">DPI即鼠标移速，使用鼠标的DPI按键可快速切换DPI挡位，通过上方编辑或拖动滑块修改DPI设置</p>
+        <div class="dpi-layout">
+          <div class="dpi-main">
+            <div id="dpiList" class="dpi-list"></div>
+            <div class="dpi-actions">
+              <button id="addDpiBtn" class="btn btn-ghost" data-i18n="addDpi">新增档位</button>
+              <span class="dpi-note" data-i18n="dpiMinNote">DPI 最小值为 50：低于 50 的数值（含 0）会自动按 50 处理</span>
+              <span class="dpi-note" data-i18n="dpiColorNote">DPI 指示灯颜色由鼠标固件固定，官方驱动同样没有改色入口；左侧色块只用于区分档位</span>
+            </div>
+          </div>
+          <aside class="device-panel" id="devicePanel">
+            <div class="panel-head">
+              <span class="panel-dot" id="panelDot"></span>
+              <span class="panel-title" data-i18n="panelDevice">设备</span>
+              <span class="panel-state" id="panelState" data-i18n="notConnected">未连接设备</span>
+            </div>
+            <div class="mouse-art" id="mouseArt" aria-hidden="true">
+              <svg viewBox="0 0 120 168">
+                <defs>
+                  <linearGradient id="mouseBody" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="#242C3B" />
+                    <stop offset="100%" stop-color="#141A24" />
+                  </linearGradient>
+                  <linearGradient id="mouseEdge" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stop-color="#8E9CFF" stop-opacity=".85" />
+                    <stop offset="100%" stop-color="#4B58DC" stop-opacity=".35" />
+                  </linearGradient>
+                </defs>
+                <ellipse class="mouse-shadow" cx="60" cy="158" rx="34" ry="6" />
+                <path class="mouse-shell" d="M60 6c19 0 34 16 34 40v56c0 26-13 40-34 40S26 128 26 102V46C26 22 41 6 60 6z" fill="url(#mouseBody)" />
+                <path class="mouse-outline" d="M60 6c19 0 34 16 34 40v56c0 26-13 40-34 40S26 128 26 102V46C26 22 41 6 60 6z" />
+                <path class="mouse-seamL" d="M60 6.5V56M60 56c-8.5 0-14-5-14-11.5" />
+                <path class="mouse-seamR" d="M60 56c8.5 0 14-5 14-11.5" />
+                <rect class="mouse-wheel" x="56" y="30" width="8" height="18" rx="4" />
+                <circle class="mouse-led" id="mouseLed" cx="60" cy="96" r="7" />
+              </svg>
+            </div>
+            <div class="device-stats">
+              <div class="stat">
+                <span class="stat-label" data-i18n="reportRate">回报率</span>
+                <span class="stat-value" id="statRate">—</span>
+              </div>
+              <div class="stat">
+                <span class="stat-label" data-i18n="statDpi">当前档位</span>
+                <span class="stat-value" id="statDpi">—</span>
+              </div>
+              <div class="stat">
+                <span class="stat-label" data-i18n="batteryLabel">电量</span>
+                <span class="stat-value" id="statBattery">—</span>
+              </div>
+              <div class="stat">
+                <span class="stat-label" data-i18n="statProfile">板载配置</span>
+                <span class="stat-value" id="statProfile">—</span>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- 键位设置 -->
+      <section id="tab-buttons" class="tab">
+        <div class="tab-header"><h2 data-i18n="buttonsTitle">键位设置</h2></div>
+        <p class="hint" data-i18n="buttonsHint">选择每个物理按键的功能。</p>
+        <div id="buttonList" class="button-list"></div>
+      </section>
+
+      <!-- 性能设置 -->
+      <section id="tab-performance" class="tab">
+        <div class="tab-header"><h2 data-i18n="performanceTitle">性能设置</h2></div>
+        <div class="perf-grid">
+          <div class="perf-card">
+            <h3 data-i18n="reportRate">回报率</h3>
+            <div id="rateList" class="rate-list"></div>
+            <div class="opt-desc" data-i18n="reportRateDesc">设置鼠标与电脑通信频率，提高轮询率可以降低延迟，但会增加部分功耗</div>
+          </div>
+          <div class="perf-card">
+            <h3 data-i18n="lod">鼠标LOD高度调节</h3>
+            <div id="lodList" class="rate-list"></div>
+            <div class="opt-desc" data-i18n="lodDesc">设置传感器在鼠标抬起时，最小工作高度</div>
+          </div>
+          <div class="perf-card">
+            <h3 data-i18n="sensorMode">性能模式</h3>
+            <div id="modeList" class="rate-list"></div>
+            <div class="opt-desc" id="modeDesc"></div>
+          </div>
+          <div class="perf-card">
+            <h3 data-i18n="sensorOptions">传感器修正选项</h3>
+            <div class="opt-item">
+              <label class="switch-label"><input type="checkbox" id="motionSync" /><span class="switch"></span><span class="opt-name" data-i18n="motionSync">运动同步</span></label>
+              <div class="opt-desc" data-i18n="motionSyncDesc">对鼠标移动进行圆滑算法修正，移动轨迹更准确</div>
+            </div>
+            <div class="opt-item">
+              <label class="switch-label"><input type="checkbox" id="angleSnap" /><span class="switch"></span><span class="opt-name" data-i18n="angleSnap">直线修正</span></label>
+              <div class="opt-desc warn" data-i18n="angleSnapDesc">修正直线移动鼠标时的偏移抖动，变成绝对直线移动（游戏中不建议开启）</div>
+            </div>
+            <div class="opt-item">
+              <label class="switch-label"><input type="checkbox" id="ripple" /><span class="switch"></span><span class="opt-name" data-i18n="ripple">波纹修正</span></label>
+              <div class="opt-desc warn" data-i18n="rippleDesc">对高移速情况下进行算法修正，消除波浪形抖动（游戏中不建议开启）</div>
+            </div>
+          </div>
+          <div class="perf-card">
+            <h3 data-i18n="debounce">按键响应时间设置</h3>
+            <input type="number" id="debounce" min="0" max="30" value="8" class="num-input" />
+            <div class="opt-desc" data-i18n="debounceDesc">如果出现双击，请将按键延时调到8ms或更高直至没有双击</div>
+          </div>
+          <div class="perf-card">
+            <h3 data-i18n="sleepTime">节能调节</h3>
+            <div class="sleep-stepper">
+              <button id="sleepDown" class="step-btn" type="button">−</button>
+              <span class="sleep-value"><span id="sleepValue">60</span><span class="sleep-unit">s</span></span>
+              <button id="sleepUp" class="step-btn" type="button">+</button>
+            </div>
+            <div class="opt-desc" data-i18n="sleepTimeDesc">鼠标静置后，到停止工作的时间</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 录制宏 -->
+      <section id="tab-macro" class="tab">
+        <div class="tab-header"><h2 data-i18n="macroTitle">录制宏</h2></div>
+        <p class="hint" data-i18n="macroHint">选择宏槽位，编辑按键序列（按下/释放 + 延迟），上传后可在「键位设置」里把某个按键绑定为宏。</p>
+
+        <div class="macro-slots" id="macroSlots"></div>
+
+        <div class="macro-loop">
+          <label class="macro-loop-label" data-i18n="loopType">循环方式</label>
+          <select id="macroLoopType" class="button-select" style="width:160px">
+            <option value="0" data-i18n="loopHold">按住循环</option>
+            <option value="1" data-i18n="loopAnyKey">循环直到任意键按下</option>
+            <option value="2" data-i18n="loopN">循环</option>
+          </select>
+          <span id="macroCycleWrap">
+            <input type="number" id="macroCycle" class="num-input" min="1" value="1" />
+            <span class="macro-cycle-unit" data-i18n="times">次</span>
+          </span>
+        </div>
+
+        <div class="macro-items" id="macroItems"></div>
+
+        <div class="macro-add">
+          <select id="macroKeySel" class="button-select" style="flex:1"></select>
+          <select id="macroPressSel" class="button-select" style="width:80px">
+            <option value="1" data-i18n="press">按下</option>
+            <option value="0" data-i18n="release">释放</option>
+          </select>
+          <input type="number" id="macroDelay" class="num-input" min="0" max="60000" value="50" title="Delay(ms)" />
+          <button id="macroAddBtn" class="btn btn-ghost" data-i18n="addAction">+ 添加</button>
+        </div>
+
+        <div class="macro-actions">
+          <button id="macroImportBtn" class="btn btn-ghost" data-i18n="importMacroFile">导入宏</button>
+          <button id="macroExportBtn" class="btn btn-ghost" data-i18n="exportMacroFile">导出宏</button>
+          <span id="macroStatus" class="apply-status" role="status" aria-live="polite"></span>
+          <button id="macroUploadBtn" class="btn btn-accent" data-i18n="uploadMacro">上传到鼠标</button>
+        </div>
+      </section>
+
+      <!-- 灯效 -->
+      <section id="tab-lighting" class="tab">
+        <div class="tab-header"><h2 data-i18n="lightingTitle">灯效</h2></div>
+        <div class="perf-grid">
+          <div class="perf-card">
+            <h3 data-i18n="ledReceiverTitle">接收器灯效</h3>
+            <div id="ledList" class="led-mode-list"></div>
+            <div class="led-detail">
+              <p class="led-detail-text" id="ledDesc"></p>
+              <div class="led-gradient" id="ledGradient"></div>
+              <div class="led-swatches" id="ledSwatches"></div>
+            </div>
+            <div id="ledNote" class="opt-desc warn"></div>
+            <div class="led-foot" data-i18n="ledColorNote">颜色由接收器固件控制，不可自定义</div>
+          </div>
+          <div class="perf-card">
+            <h3 data-i18n="ledBodyTitle">鼠标本体指示灯</h3>
+            <div class="led-body">
+              <svg class="led-body-art" viewBox="0 0 44 62" aria-hidden="true">
+                <path d="M22 3c9.4 0 16 6.6 16 16.2v23.6C38 53.4 31.4 59 22 59S6 53.4 6 42.8V19.2C6 9.6 12.6 3 22 3z"
+                      fill="none" stroke="currentColor" stroke-width="1.6"/>
+                <path d="M22 6v16" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                <path d="M8 24h28" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                <circle class="led-body-dot" cx="15.5" cy="33.5" r="2.6"/>
+              </svg>
+              <ul class="led-body-facts">
+                <li><span class="led-fact-k" data-i18n="ledBodyPosKey">位置</span><span class="led-fact-v" data-i18n="ledBodyPosVal">DPI 键处</span></li>
+                <li><span class="led-fact-k" data-i18n="ledBodyTrigKey">触发</span><span class="led-fact-v" data-i18n="ledBodyTrigVal">切换 DPI 档位时短暂亮起</span></li>
+                <li><span class="led-fact-k" data-i18n="ledBodyCtrlKey">控制</span><span class="led-fact-v" data-i18n="ledBodyCtrlVal">由固件决定，本工具与官方网页驱动均无对应设置项</span></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <footer class="bottombar">
+    <div id="profileBar" class="profile-bar">
+      <span class="profile-label" data-i18n="onboardConfig">板载配置：</span>
+      <button class="profile-btn" data-profile="0">1</button>
+      <button class="profile-btn" data-profile="1">2</button>
+      <button class="profile-btn" data-profile="2">3</button>
+      <button class="profile-btn" data-profile="3">4</button>
+      <button class="profile-btn" data-profile="4">5</button>
+    </div>
+    <div class="bottombar-actions">
+      <button id="importBtn" class="btn btn-ghost" data-i18n="importConfig">导入配置</button>
+      <button id="exportBtn" class="btn btn-ghost" data-i18n="exportConfig">导出配置</button>
+      <span id="applyStatus" class="apply-status" role="status" aria-live="polite"></span>
+      <button id="applyBtn" class="btn btn-accent" data-i18n="apply">应用到鼠标</button>
+    </div>
+  </footer>
+
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+  <!-- 桥接层必须先于 app.js 执行（组装 window.api/i18n/keynames） -->
+  <script type="module" src="bridge/main-init.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

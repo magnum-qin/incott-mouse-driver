@@ -1,0 +1,182 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   中性基座：把 ui/style.css 里写死的装饰值全部收进 token。
+   只加载本文件时观感与旧界面一致；候选风格只需覆盖 token + 少量组件规则。
+
+   加载顺序：ui/style.css → 本文件 → design/styles/<风格>.css
+   ───────────────────────────────────────────────────────────────────────────── */
+:root {
+  /* 半透明叠加层 */
+  --hover: rgba(255, 255, 255, .05);
+  --pressed: rgba(255, 255, 255, .11);
+  --primary-hover: rgba(212, 191, 255, .20);
+  --selection: rgba(212, 191, 255, .32);
+  --danger-soft: rgba(240, 97, 107, .10);
+  --success-soft: rgba(53, 201, 138, .12);
+  --warn-soft: rgba(232, 163, 61, .10);
+  --disabled-border: dashed;
+
+  /* 窗口镶边 */
+  --win-close: #c42b1c;
+  --win-close-pressed: #b02a1c;
+  --topbar-shadow: inset 0 1px 0 rgba(255, 255, 255, .045), inset 0 -1px 0 rgba(212, 191, 255, .10);
+  --bottombar-shadow: 0 -8px 24px rgba(0, 0, 0, .25);
+
+  /* 卡片与选中态 */
+  --card-shadow: inset 0 1px 0 var(--glass-hi), var(--shadow-card);
+  --nav-active-bg: linear-gradient(90deg, var(--accent-soft), rgba(169, 139, 240, .02));
+  --nav-marker: "";            /* none = 不画导航左侧指示条 */
+  --nav-marker-shadow: none;
+  --current-bg: linear-gradient(90deg, rgba(169, 139, 240, .16), rgba(169, 139, 240, .03) 45%, var(--bg-card) 100%);
+  --current-shadow: inset 0 1px 0 var(--glass-hi), var(--shadow-card), 0 0 0 1px rgba(212, 191, 255, .12);
+  --current-focus-shadow: inset 0 1px 0 var(--glass-hi), 0 0 0 1px rgba(212, 191, 255, .18);
+  --current-bar: "";           /* none = 不画当前档位左侧指示条 */
+  --current-bar-shadow: 0 0 10px rgba(212, 191, 255, .5);
+  --panel-bg: radial-gradient(120% 90% at 50% 0%, rgba(169, 139, 240, .10), transparent 62%), var(--bg-card);
+  --panel-border-connected: rgba(212, 191, 255, .38);
+
+  /* 发光 */
+  --brand-dot-bg: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  --brand-dot-shadow: 0 0 0 3px var(--accent-soft), 0 0 12px rgba(212, 191, 255, .35);
+  --status-glow: 0 0 0 3px rgba(169, 139, 240, .14), 0 0 10px 1px rgba(212, 191, 255, .65);
+  --panel-dot-glow: 0 0 0 3px rgba(169, 139, 240, .16), 0 0 8px rgba(212, 191, 255, .7);
+  --led-dot-glow: 0 0 8px var(--accent);
+  --led-swatch-glow: 0 0 8px var(--sw);
+  --led-glow: drop-shadow(0 0 7px rgba(212, 191, 255, .85));
+
+  /* 主按钮 */
+  --cta-bg: linear-gradient(180deg, var(--accent-hover), var(--accent-strong));
+  --cta-bg-hover: linear-gradient(180deg, #CDB8FF, var(--accent-strong));
+  --cta-border: var(--accent-border);
+  --cta-shadow: var(--shadow-cta);
+
+  /* 鼠标插画 */
+  --art-shadow-opacity: .38;
+  --art-shell: url(#mouseBody);
+  --art-outline: rgba(212, 191, 255, .28);
+  --art-outline-connected: rgba(212, 191, 255, .55);
+  --art-seam: rgba(255, 255, 255, .14);
+  --art-wheel: #202836;
+  --art-wheel-stroke: rgba(255, 255, 255, .16);
+  --art-led: #2A3243;
+  --art-led-stroke: rgba(255, 255, 255, .10);
+
+  --track-inset: inset 0 0 0 1px rgba(0, 0, 0, .35);
+  --pill: 999px;
+
+  /* 托盘浮层窗口（popover.css） */
+  --popover-bg: linear-gradient(180deg, #17122A 0%, var(--bg) 78%);
+  --popover-border: var(--border-strong);
+  --popover-radius: 12px;
+  --popover-shadow: 0 14px 34px rgba(0, 0, 0, .62);
+
+  /* 自绘滑杆（原生滑杆在 shadow DOM 里，无法主题化）。
+     --sw / --fill 由 app.js 写在每条滑杆上：档位色、已填充比例 */
+  --slider-track-h: 6px;
+  --slider-track-radius: 999px;
+  --slider-track: rgba(255, 255, 255, .22);
+  --slider-thumb: 14px;
+  --slider-thumb-radius: 50%;
+  --slider-thumb-bg: #fff;
+  --slider-thumb-border: 2px solid var(--sw, var(--accent));
+  --slider-thumb-shadow: none;
+}
+
+/* ── 把写死的值换成 token ─────────────────────────────────── */
+::selection { background: var(--selection); }
+
+.topbar { box-shadow: var(--topbar-shadow); }
+.win-btn:hover { background: var(--hover); }
+.win-btn:active { background: var(--pressed); }
+.win-btn-close:hover { background: var(--win-close); }
+.win-btn-close:active { background: var(--win-close-pressed); }
+.brand-dot { background: var(--brand-dot-bg); box-shadow: var(--brand-dot-shadow); }
+.brand-dot::after { background: var(--bg); }
+.status-dot.on { box-shadow: var(--status-glow); }
+.lang-option:hover, .settings-item:hover { background: var(--hover); }
+.btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+.btn-accent { background: var(--cta-bg); border-color: var(--cta-border); box-shadow: var(--cta-shadow); }
+.btn-accent:hover:not(:disabled) { background: var(--cta-bg-hover); }
+.btn-ghost:hover:not(:disabled) { background: var(--hover); }
+#macroUploadBtn:hover:not(:disabled) { background: var(--primary-hover); }
+.btn:disabled, .btn-accent:disabled, .btn-primary:disabled, .btn-ghost:disabled,
+#macroUploadBtn:disabled { border: 1px var(--disabled-border) var(--border-strong); }
+.nav-item:hover { background: var(--hover); }
+.nav-item.active { background: var(--nav-active-bg); }
+.nav-item.active::before {
+  content: var(--nav-marker);
+  background: var(--accent);
+  box-shadow: var(--nav-marker-shadow);
+}
+.repo-link:hover, .sidebar-ver:hover { background: var(--hover); }
+
+.dpi-card { box-shadow: var(--card-shadow); }
+.dpi-card.current { background: var(--current-bg); box-shadow: var(--current-shadow); }
+.dpi-card.current::before {
+  content: var(--current-bar);
+  background: var(--accent);
+  box-shadow: var(--current-bar-shadow);
+}
+.dpi-card:focus-within { box-shadow: var(--current-focus-shadow); }
+.dpi-card.current .dpi-swatch { outline: 2px solid var(--bg-card); box-shadow: 0 0 0 1px var(--accent); }
+.dpi-remove:hover { background: var(--danger-soft); }
+
+.device-panel { background: var(--panel-bg); box-shadow: var(--card-shadow); }
+.device-panel.connected { border-color: var(--panel-border-connected); }
+.device-panel.connected .panel-dot { box-shadow: var(--panel-dot-glow); }
+.mouse-shadow { opacity: var(--art-shadow-opacity); }
+.mouse-shell { fill: var(--art-shell); }
+.mouse-outline { stroke: var(--art-outline); }
+.mouse-seamL, .mouse-seamR { stroke: var(--art-seam); }
+.mouse-wheel { fill: var(--art-wheel); stroke: var(--art-wheel-stroke); }
+.mouse-led { fill: var(--art-led); stroke: var(--art-led-stroke); }
+.device-panel.connected .mouse-outline { stroke: var(--art-outline-connected); }
+.device-panel.connected .mouse-led { filter: var(--led-glow); }
+
+.perf-card, .macro-loop, .macro-add, .button-row, .macro-item { box-shadow: var(--card-shadow); }
+.rate-chip:disabled { border-style: var(--disabled-border); }
+.led-mode { border-radius: var(--pill); }
+.led-mode.selected .led-mode-dot { box-shadow: var(--led-dot-glow); }
+.led-gradient { box-shadow: var(--track-inset); }
+.led-swatch i { box-shadow: var(--led-swatch-glow); }
+.opt-desc.warn { background: var(--warn-soft); }
+.macro-item-dir.press { background: var(--success-soft); }
+.macro-item-dir.release { background: var(--hover); }
+.macro-item-remove:hover { background: var(--danger-soft); }
+
+.bottombar { box-shadow: var(--bottombar-shadow); }
+
+/* ── 自绘滑杆 ─────────────────────────────────────────────── */
+.dpi-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  accent-color: auto;
+}
+.dpi-slider::-webkit-slider-runnable-track {
+  height: var(--slider-track-h);
+  border-radius: var(--slider-track-radius);
+  background:
+    linear-gradient(var(--sw, var(--accent)), var(--sw, var(--accent))) 0 / var(--fill, 0%) 100% no-repeat,
+    var(--slider-track);
+}
+.dpi-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: var(--slider-thumb);
+  height: var(--slider-thumb);
+  margin-top: calc((var(--slider-track-h) - var(--slider-thumb)) / 2);
+  border-radius: var(--slider-thumb-radius);
+  background: var(--slider-thumb-bg);
+  border: var(--slider-thumb-border);
+  box-shadow: var(--slider-thumb-shadow);
+}
+.dpi-slider:focus-visible { outline: none; box-shadow: none; }
+.dpi-slider:focus-visible::-webkit-slider-thumb {
+  box-shadow: var(--slider-thumb-shadow), 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+}
+
+/* ── 托盘浮层窗口（popover.css 里的底色 / 描边写死了，收进 token）────── */
+body.popover {
+  background: var(--popover-bg);
+  border-radius: var(--popover-radius);
+  box-shadow: inset 0 0 0 1px var(--popover-border), var(--popover-shadow);
+}

@@ -1,0 +1,338 @@
+'use strict';
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import * as P from '../ui/shared/protocol.js';
+
+// Buffer.concat 的 Uint8Array 等价实现（浏览器化后不再依赖 Node Buffer）
+const concatBytes = (chunks) => {
+  const out = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+  let o = 0;
+  for (const c of chunks) {
+    out.set(c, o);
+    o += c.length;
+  }
+  return out;
+};
+
+test('DPI 映射：hw = (dpi-50)/50，往返一致', () => {
+  assert.equal(P.dpiToHw(50), 0);
+  assert.equal(P.dpiToHw(800), 15);
+  assert.equal(P.dpiToHw(32000), 639);
+  assert.equal(P.dpiToHw(45000), 899);
+  assert.equal(P.dpiToHw(49), -1); // 越界
+  assert.equal(P.hwToDpi(15), 800);
+  assert.equal(P.hwToDpi(0), 50);
+});
+
+test('传感器最大 DPI', () => {
+  assert.equal(P.maxDpiForSensor(P.SENSOR.PAW3395), 32000);
+  assert.equal(P.maxDpiForSensor(P.SENSOR.PAW3950), 45000);
+});
+
+test('轮询率命令：[1, code]', () => {
+  assert.deepEqual([...P.buildSetRate(1000)], [1, 0, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual([...P.buildSetRate(125)], [1, 3, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual([...P.buildSetRate(8000)], [1, 4, 0, 0, 0, 0, 0, 0]);
+  assert.throws(() => P.buildSetRate(300), RangeError);
+});
+
+test('DPI 档位值命令：[2, ix, lo, hi, 0,0,0, flag]', () => {
+  // 800 DPI → hw 15 → lo=15, hi=0
+  assert.deepEqual([...P.buildSetResolution(2, 15, 0)], [2, 2, 15, 0, 0, 0, 0, 0]);
+  // 32000 DPI → hw 639 → lo=127, hi=2
+  assert.deepEqual([...P.buildSetResolution(0, 639, 1)], [2, 0, 127, 2, 0, 0, 0, 1]);
+});
+
+test('DPI 档位灯色写进 buf[4..6]（官方驱动恒填 0）', () => {
+  // 不传颜色 → 三个字节保持 0，与旧行为完全一致
+  assert.deepEqual([...P.buildSetResolution(0, 31, 0, null)], [2, 0, 31, 0, 0, 0, 0, 0]);
+  assert.deepEqual([...P.buildSetResolution(0, 31, 0, '#ff0000')], [2, 0, 31, 0, 255, 0, 0, 0]);
+  assert.deepEqual([...P.buildSetResolution(0, 31, 0, '#00ff00')], [2, 0, 31, 0, 0, 255, 0, 0]);
+  assert.deepEqual([...P.buildSetResolution(0, 31, 0, '#0000ff')], [2, 0, 31, 0, 0, 0, 255, 0]);
+  // 三位缩写与非法值
+  assert.deepEqual([...P.buildSetResolution(0, 31, 0, '#0f0')], [2, 0, 31, 0, 0, 255, 0, 0]);
+  assert.deepEqual([...P.buildSetResolution(0, 31, 0, 'nope')], [2, 0, 31, 0, 0, 0, 0, 0]);
+  // .ict 的 dpicolor 是 0xBBGGRR 整数：0x0000FF = 红
+  assert.deepEqual([...P.buildSetResolution(0, 31, 0, 0x0000ff)], [2, 0, 31, 0, 255, 0, 0, 0]);
+  assert.deepEqual([...P.buildSetResolution(0, 31, 0, 0xff0000)], [2, 0, 31, 0, 0, 0, 255, 0]);
+  // XY 分离时颜色两条都要带
+  assert.deepEqual([...P.buildSetResolution(1, 15, 2, '#ff8800')], [2, 1, 15, 0, 255, 136, 0, 2]);
+  // 回读还原
+  assert.equal(P.bytesToColor([130, 0, 31, 0, 255, 0, 0, 0]), '#ff0000');
+  assert.equal(P.bytesToColor([130, 0, 31, 0, 0, 136, 255, 0]), '#0088ff');
+  // 全 0 = 该档没存过颜色
+  assert.equal(P.bytesToColor([130, 0, 31, 0, 0, 0, 0, 0]), '#000000');
+});
+
+test('DPI 档位切换：[3, levels, cur]', () => {
+  assert.deepEqual([...P.buildSetDpiLevel(6, 2)], [3, 6, 2, 0, 0, 0, 0, 0]);
+});
+
+test('传感器高级设置：[4, sub, val]', () => {
+  assert.deepEqual([...P.buildSetLod(1)], [4, 1, 1, 0, 0, 0, 0, 0]);
+  assert.deepEqual([...P.buildSetRipple(true)], [4, 2, 1, 0, 0, 0, 0, 0]);
+  assert.deepEqual([...P.buildSetAngleSnap(false)], [4, 3, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual([...P.buildSetMotionSync(true)], [4, 4, 1, 0, 0, 0, 0, 0]);
+  assert.deepEqual([...P.buildSetSensorMode(1)], [4, 5, 1, 0, 0, 0, 0, 0]);
+});
+
+test('去抖/火力键/睡眠：[5, sub, ...]', () => {
+  assert.deepEqual([...P.buildSetDebounce(8)], [5, 1, 8, 0, 0, 0, 0, 0]);
+  assert.deepEqual([...P.buildSetDebounce(99)], [5, 1, 30, 0, 0, 0, 0, 0]); // 上限 30
+  assert.deepEqual([...P.buildSetFireKey(2, 5)], [5, 2, 2, 5, 0, 0, 0, 0]);
+  assert.deepEqual([...P.buildSetSleepTime(600)], [5, 3, 88, 2, 0, 0, 0, 0]); // 600 = 0x258
+  // 节能调节官方档位 10~900s：低于 10 抬到 10，高于 900 压到 900（900 = 0x384）
+  assert.deepEqual([...P.buildSetSleepTime(5)], [5, 3, 10, 0, 0, 0, 0, 0]);
+  assert.deepEqual([...P.buildSetSleepTime(1800)], [5, 3, 0x84, 0x03, 0, 0, 0, 0]);
+});
+
+test('节能调节档位：SLEEP_STEPS 与吸附', () => {
+  // 官方 DormancyTime 数组（chunk-v1013.js 反混淆）
+  assert.deepEqual(P.SLEEP_STEPS, [
+    10, 20, 30, 60, 120, 180, 240, 300, 360, 420, 480, 540, 600, 660, 720, 780, 840, 900,
+  ]);
+  assert.equal(P.nearestSleepStep(600), 600);
+  assert.equal(P.nearestSleepStep(35), 30); // 落在 30/60 之间偏 30
+  assert.equal(P.nearestSleepStep(45), 30); // 与 30/60 等距时保留先命中的较小档
+  assert.equal(P.nearestSleepStep(1000), 900);
+  assert.equal(P.nearestSleepStep(1), 10);
+  assert.equal(P.nearestSleepStep(NaN), 10);
+});
+
+test('LOD 硬件码反查（读设备配置用）', () => {
+  // PAW3950：hw 2→UI 0, hw 0→UI 1, hw 1→UI 2
+  assert.equal(P.lodFromHw(2, P.SENSOR.PAW3950), 0);
+  assert.equal(P.lodFromHw(0, P.SENSOR.PAW3950), 1);
+  assert.equal(P.lodFromHw(1, P.SENSOR.PAW3950), 2);
+  // 其他传感器直通
+  assert.equal(P.lodFromHw(1, P.SENSOR.PAW3395), 1);
+  // 越界码不抛错，回落 UI 0
+  assert.equal(P.lodFromHw(9, P.SENSOR.PAW3950), 0);
+});
+
+test('板载配置数量：硬编码与官方桌面驱动一致（5 个）', () => {
+  assert.equal(P.PROFILE_COUNT, 5);
+});
+
+test('按键映射：[6, index, k1..k4] 小端', () => {
+  // 左键 0x00F00001 → k1=0x01, k2=0x00, k3=0xF0, k4=0x00
+  const b = P.buildSetKey(0, 0x00f00001);
+  assert.deepEqual([...b], [6, 0, 0x01, 0x00, 0xf0, 0x00, 0, 0]);
+});
+
+test('键码编码：鼠标键', () => {
+  assert.equal(P.encodeMouseKey('LEFT'), 0x00f00001);
+  assert.equal(P.encodeMouseKey('DPI_LOOP'), 0x00030007);
+  assert.equal(P.encodeMouseKey('DISABLED'), 0);
+});
+
+test('键码编码：键盘键（无修饰）', () => {
+  // A = 0x04 → (0x04 << 8) | 0x80 = 0x0480
+  assert.equal(P.encodeKeyboardKey(0x04), 0x0480);
+});
+
+test('键码编码：键盘键（有修饰）', () => {
+  // A + CtrlL → (0x04 << 16) | (1 << 8) = 0x040100
+  assert.equal(P.encodeKeyboardKey(0x04, P.MODIFIERS.CTRL_L), 0x040100);
+});
+
+test('键码编码：多媒体键', () => {
+  assert.equal(P.encodeMediaKey('VOL_INC'), 0x00e90003);
+});
+
+test('键码编码：宏键', () => {
+  assert.equal(P.encodeMacroKey(3), (3 << 16) | 9);
+});
+
+test('宏编码：320 字节结构', () => {
+  const macro = {
+    slot: 2,
+    loopType: 2, // 循环 N 次
+    cycle: 5,
+    uid: 0x12345678,
+    items: [
+      { press: true, keyCode: 0x04, delay: 100 }, // A 按下，延迟 100ms
+      { press: false, keyCode: 0x04, delay: 50 }, // A 释放，延迟 50ms
+    ],
+  };
+  const b = P.encodeMacro(macro);
+  assert.equal(b.length, 320);
+  assert.equal(b[0], 2); // slot
+  assert.equal(b[1], 2); // loopType
+  assert.equal(b[2], 5); // cycle 低字节
+  assert.equal(b[3], 0); // cycle 高字节
+  // 第一项
+  assert.equal(b[4], (0 | 1)); // press → 1
+  assert.equal(b[5], 0x04); // 键码
+  assert.equal(b[6], 100); // delay 低
+  assert.equal(b[7], 0); // delay 高
+  // 第二项
+  assert.equal(b[8], (128 | 1)); // release → 129
+  assert.equal(b[9], 0x04);
+  assert.equal(b[10], 50);
+  // 宏名标记 "Macro3"
+  assert.equal(String.fromCharCode(b[288], b[289], b[290], b[291], b[292], b[293]), 'Macro3');
+  // uid
+  assert.equal(b[312] | (b[313] << 8) | (b[314] << 16) | (b[315] << 24), 0x12345678);
+});
+
+test('parseStatusPush 解析设备主动上报', () => {
+  // b0=72% 未充电, b1 低4位=0(1000Hz) 高4位=2(DPI索引), b2 高2位=1(板载配置)
+  const s = P.parseStatusPush(new Uint8Array([72, 0x20, 0x40, 0, 0, 0, 0, 0]));
+  assert.deepEqual(s, { power: 72, charging: false, rate: 1000, dpiIndex: 2, profileIndex: 1 });
+  // 充电中：b0 = 128 + 85
+  const c = P.parseStatusPush(new Uint8Array([128 + 85, 0x04, 0, 0, 0, 0, 0, 0]));
+  assert.equal(c.power, 85);
+  assert.equal(c.charging, true);
+  assert.equal(c.rate, 8000); // 回报率索引 4 = 8000Hz
+  assert.equal(c.dpiIndex, 0);
+  // 电量越界 / 长度不足 → null
+  assert.equal(P.parseStatusPush(new Uint8Array([112, 0x20, 0x40])), null); // 112>100
+  assert.equal(P.parseStatusPush(new Uint8Array([0x7f, 0, 0])), null); // 127>100
+  assert.equal(P.parseStatusPush(new Uint8Array([50])), null);
+  assert.equal(P.parseStatusPush(null), null);
+});
+
+test('接收器灯效命令（8K 接收器）', () => {
+  assert.deepEqual([...P.buildSetReceiverLed(0)], [8, 0, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual([...P.buildSetReceiverLed(2)], [8, 2, 0, 0, 0, 0, 0, 0]);
+  assert.equal(P.LED_MODE_TABLE.length, 3);
+  assert.throws(() => P.buildSetReceiverLed(3), RangeError); // 只有 0/1/2 三档
+});
+
+test('读取命令构造', () => {
+  assert.deepEqual([...P.buildReadDpiLevel()], [131, 0, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual([...P.buildReadBattery()], [137, 0, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual([...P.buildReadKey(5)], [134, 5, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual([...P.buildReadMatchInfo()], [142, 1, 0, 0, 0, 0, 0, 0]);
+});
+
+test('读取命令构造（实机验证的对称读命令 0x81~0x88 + 0x8F）', () => {
+  assert.deepEqual([...P.buildReadRate()], [0x81, 0, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual([...P.buildReadResolution(3)], [0x82, 3, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual([...P.buildReadSensor(5)], [0x84, 5, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual([...P.buildReadMisc(2)], [0x85, 2, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual([...P.buildReadReceiverLed()], [0x88, 0, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual([...P.buildReadModelInfo()], [0x8f, 0, 0, 0, 0, 0, 0, 0]);
+});
+
+test('LOD 映射：PAW3950 旋转 [2,0,1]，其他直接映射', () => {
+  // PAW3950：UI 0→hw 2, 1→0, 2→1（官方 apply 流程原样行为）
+  assert.equal(P.lodToHw(0, P.SENSOR.PAW3950), 2);
+  assert.equal(P.lodToHw(1, P.SENSOR.PAW3950), 0);
+  assert.equal(P.lodToHw(2, P.SENSOR.PAW3950), 1);
+  // PAW3395 / 未知传感器：直接映射
+  assert.equal(P.lodToHw(0, P.SENSOR.PAW3395), 0);
+  assert.equal(P.lodToHw(2, P.SENSOR.PAW3395), 2);
+  assert.equal(P.lodToHw(1, null), 1);
+  assert.throws(() => P.lodToHw(3, P.SENSOR.PAW3950), RangeError);
+});
+
+test('回报率钳制：非 8K 接收器 2000Hz+ 回落 1000Hz', () => {
+  // 8K 接收器：不钳制
+  assert.equal(P.clampRate(8000, true), 8000);
+  assert.equal(P.clampRate(2000, true), 2000);
+  // 非 8K（有线/普通接收器）：>1000Hz 钳到 1000
+  assert.equal(P.clampRate(8000, false), 1000);
+  assert.equal(P.clampRate(4000, false), 1000);
+  assert.equal(P.clampRate(2000, false), 1000);
+  assert.equal(P.clampRate(1000, false), 1000);
+  assert.equal(P.clampRate(125, false), 125);
+  // 未知（null）：保持旧行为不钳制
+  assert.equal(P.clampRate(8000, null), 8000);
+  assert.throws(() => P.clampRate(300, true), RangeError);
+});
+
+test('型号信息解析（0x8F）', () => {
+  // 有线 G24 Pro + PAW3950：传感器字节在 buf[4]=241
+  const wired = [0x8f, 1, 3, 0, 241, 0, 0, 0];
+  const info1 = P.parseModelInfo(wired, false);
+  assert.deepEqual(info1, {
+    modelCode: 3,
+    model: 'G24',
+    name: 'G24 Pro',
+    is8KReceiver: false,
+    sensor: P.SENSOR.PAW3950,
+  });
+  // 无线 G23 + 8K 接收器 + PAW3395：传感器字节在 buf[5]=240
+  const wireless = [0x8f, 1, 2, 2, 0, 240, 0, 0];
+  const info2 = P.parseModelInfo(wireless, true);
+  assert.deepEqual(info2, {
+    modelCode: 2,
+    model: 'G23',
+    name: 'G23',
+    is8KReceiver: true,
+    sensor: P.SENSOR.PAW3395,
+  });
+  // 非法输入
+  assert.equal(P.parseModelInfo([0x83, 1, 3, 0, 241, 0, 0, 0], false), null); // 回显不对
+  assert.equal(P.parseModelInfo([0x8f, 0, 3, 0, 241, 0, 0, 0], false), null); // 标志位不为 1
+  assert.equal(P.parseModelInfo([0x8f, 1, 99, 0, 241, 0, 0, 0], false), null); // 未知型号
+  assert.equal(P.parseModelInfo(null, false), null);
+});
+
+test('型号显示名：固件只报系列代码，G24 系列里带 PAW3950 的是 G24 Pro', () => {
+  // G24 Pro 无线 + 8K 接收器（2026-11-23 真机原始字节）：传感器在 buf[5]=241
+  const pro = P.parseModelInfo([0x8f, 1, 3, 2, 240, 241, 0, 0], true);
+  assert.equal(pro.model, 'G24'); // 系列名不变
+  assert.equal(pro.name, 'G24 Pro');
+  assert.equal(pro.is8KReceiver, true);
+  // 原版 G24（PAW3395）即使插着 8K 接收器，也只按 G24 显示
+  const g24 = P.parseModelInfo([0x8f, 1, 3, 2, 240, 240, 0, 0], true);
+  assert.equal(g24.name, 'G24');
+  assert.equal(g24.sensor, P.SENSOR.PAW3395);
+  // 别的系列不受影响：G23 带 PAW3950 仍叫 G23（没核实过它们的版本差异）
+  assert.equal(P.modelName(2, P.SENSOR.PAW3950), 'G23');
+  assert.equal(P.modelName(3, P.SENSOR.PAW3395), 'G24');
+  assert.equal(P.modelName(99, P.SENSOR.PAW3950), null);
+});
+
+test('宏分块命令：[7, totalBlocks, blockIndex, 32, slotId]', () => {
+  assert.deepEqual([...P.buildMacroBlock(10, 0, 3)], [7, 10, 0, 32, 3, 0, 0, 0]);
+  assert.deepEqual([...P.buildMacroBlock(10, 9, 0)], [7, 10, 9, 32, 0, 0, 0, 0]);
+});
+
+test('宏编码可分块：320 字节 = 10 块 × 32 字节', () => {
+  const macro = {
+    slot: 0,
+    loopType: 2,
+    cycle: 1,
+    uid: 1,
+    items: Array.from({ length: 5 }, (_, i) => ({
+      press: i % 2 === 0,
+      keyCode: 0x04,
+      delay: 100,
+    })),
+  };
+  const b = P.encodeMacro(macro);
+  assert.equal(b.length, 320);
+  // 分块完整性：每块 32 字节，共 10 块，拼回等于原数据
+  const blocks = [];
+  for (let i = 0; i < 10; i++) blocks.push(b.slice(i * 32, i * 32 + 32));
+  assert.equal(blocks.length, 10);
+  assert.ok(blocks.every((blk) => blk.length === 32));
+  assert.deepEqual(concatBytes(blocks), b);
+});
+
+test('所有命令输出均为 8 字节', () => {
+  const builders = [
+    P.buildSetRate(1000),
+    P.buildSetResolution(0, 15),
+    P.buildSetDpiLevel(6, 2),
+    P.buildSetLod(1),
+    P.buildSetKey(0, 0x00f00001),
+    P.buildSetProfile(2),
+    P.buildSetReceiverLed(1),
+    P.buildReadDpiLevel(),
+    P.buildReadRate(),
+    P.buildReadResolution(0),
+    P.buildReadSensor(1),
+    P.buildReadMisc(3),
+    P.buildReadReceiverLed(),
+    P.buildReadModelInfo(),
+  ];
+  for (const b of builders) {
+    assert.equal(b.length, 8);
+  }
+});

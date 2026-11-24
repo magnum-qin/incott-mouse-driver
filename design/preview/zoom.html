@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>放大预览</title>
+  <style>
+    html, body { margin: 0; overflow: hidden; background: #000; }
+    #f { position: absolute; left: 0; top: 0; width: var(--pw); height: var(--ph); border: 0; transform-origin: 0 0; }
+  </style>
+</head>
+<body>
+  <!--
+    放大看局部：把预览页放进固定尺寸的 iframe，再平移 + 缩放（始终静帧）。
+      /design/preview/zoom.html?x=640&y=110&z=2          其余参数原样透传给预览页
+      pw= / ph= 指定内嵌尺寸（默认 1080×720；托盘浮层用 268×180）
+    配合截图时把窗口设为 (宽×z) × (高×z)，例如：
+      node design/preview/shot.mjs "<上面的地址>" out.png --w 840 --h 400
+    注意：无头浏览器的窗口宽度有下限，小于约 500px 的截图会被裁切。要看小尺寸的界面
+    （比如浮层），用本工具放大 z 倍再看，不要直接把窗口设成那么小。
+  -->
+  <iframe id="f"></iframe>
+  <script>
+    const q = new URLSearchParams(location.search);
+    const z = Number(q.get('z') || 2);
+    const x = Number(q.get('x') || 0);
+    const y = Number(q.get('y') || 0);
+    const inner = new URLSearchParams(q);
+    ['x', 'y', 'z', 'pw', 'ph'].forEach((k) => inner.delete(k));
+    inner.set('still', '1');
+    const f = document.getElementById('f');
+    f.style.setProperty('--pw', `${q.get('pw') || 1080}px`);
+    f.style.setProperty('--ph', `${q.get('ph') || 720}px`);
+    f.src = `/design/preview/index.html?${inner}`;
+    f.style.transform = `translate(${-x * z}px, ${-y * z}px) scale(${z})`;
+  </script>
+</body>
+</html>
