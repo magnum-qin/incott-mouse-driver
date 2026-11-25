@@ -1,6 +1,6 @@
 {
   "name": "incott-mouse-driver-tauri",
-  "version": "1.2.7",
+  "version": "1.0.0",
   "description": "Incott 鼠标驱动（Tauri 版）—— 基于 HeHaoren/incott-mouse-app 的 Electron 版改造，轻量安装包",
   "license": "MIT",
   "homepage": "https://github.com/magnum-qin/incott-mouse-driver#readme",

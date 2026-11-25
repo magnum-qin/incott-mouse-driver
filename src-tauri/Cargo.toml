@@ -1,8 +1,8 @@
 [package]
 name = "incott-mouse-driver"
-version = "1.2.7"
+version = "1.0.0"
 description = "Incott 鼠标驱动 —— 独立桌面配置工具（基于逆向的 HID 协议）"
-authors = ["Incott Dev"]
+authors = ["magnum-qin"]
 license = "MIT"
 edition = "2021"
 

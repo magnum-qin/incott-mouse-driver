@@ -143,7 +143,7 @@
       case 'hid_write_output': return null;
       case 'settings_get': return { autoLaunch: true, silentStart: false, uiScale: param('scale', 'auto') };
       case 'settings_set': return { autoLaunch: !!args.patch?.autoLaunch, silentStart: !!args.patch?.silentStart, uiScale: args.patch?.uiScale || 'auto' };
-      case 'get_app_info': return { version: '1.2.7', homepage: 'https://github.com/magnum-qin/incott-mouse-driver' };
+      case 'get_app_info': return { version: '1.0.0', homepage: 'https://github.com/magnum-qin/incott-mouse-driver' };
       case 'tray_get_status': return TRAY_STATUS();
       case 'tray_refresh': emit('tray://status', TRAY_STATUS()); return null;
       default: return null; // tray_set_* / notify / show_about / export_file / import_file / open_url…
