@@ -47,6 +47,12 @@
   并且不算作「未应用」。
 - 鼠标上的物理配置切换键仍然是立即生效（硬件只改序号，由本工具把对应预设整套灌入）。
 
+## 安装
+
+到 [Releases](https://github.com/magnum-qin/incott-mouse-driver/releases/latest) 下载安装包
+（`Incott.Mouse.Driver_x.y.z_x64-setup.exe`，约 1.4 MB），双击安装。仅支持 Windows 10 / 11；
+需要 WebView2 运行时（Windows 11 自带，缺少时安装包会联网下载）。想自己编译见下面「开发」。
+
 ## 开发
 
 前置要求：Node 18+、Rust（MSVC 工具链）、VS Build Tools（C++ 工作负载）、WebView2（Win10/11 自带）。
