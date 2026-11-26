@@ -3,6 +3,8 @@
 
    配色：中性无色偏的深灰；白色是唯一信号色，只给「亮着的指示」
         （当前项、主按钮、LED）。画面里只有电池灯和档位灯带颜色。
+        亮色主题是同一套形态的另一组取值（见下面的 [data-mode="light"]）：
+        浅灰做底，墨色是唯一的信号色。凡是在两种主题下不一样的东西都走令牌，规则里不写死颜色。
    形态：编号菜单与章节、指示灯、等宽数字、推子 + 刻度尺、带灯按键、内凹读数屏。
    层级：单色界面不靠色相，靠明度（底 → 卡片 → 按键 三级）、字重与字体
         （中文用界面字体、数字用等宽）、以及亮着的灯。
@@ -84,6 +86,153 @@
   --ease-out: cubic-bezier(.2, .8, .2, 1);         /* 进场：减速停下 */
   --ease-in: cubic-bezier(.4, 0, 1, 1);            /* 退场：加速离开 */
   --ease-state: cubic-bezier(.4, 0, .2, 1);        /* 状态变化 */
+
+  /* ── 随主题变化的细节（原先写死在各个规则里）── */
+  --window-edge: rgba(255, 255, 255, .1);           /* 自绘窗口四周的一圈细描边 */
+  --selection: rgba(255, 255, 255, .22);
+  --scrollbar: #2e2e32;
+  --flash-rgb-key: 255 255 255;                     /* 点击回执：键面上叠的一层，松开后从 16% 淡到 0 */
+  --flash-rgb-cta: 0 0 0;                           /* 亮着的主按钮是白的，叠白色看不出来，换成压暗 */
+  --flash-overlay: rgba(255, 255, 255, .16);        /* 菜单项是透明的，点击回执靠一层蒙层 */
+  --key-bevel: inset 0 1px 0 rgba(255, 255, 255, .04), 0 1px 0 rgba(0, 0, 0, .6);       /* 键的上沿一道高光、下沿一道投影 */
+  --key-bevel-hover: inset 0 1px 0 rgba(255, 255, 255, .05), 0 1px 0 rgba(0, 0, 0, .6);
+  --key-press: inset 0 1px 2px rgba(0, 0, 0, .6);    /* 按下去：内阴影 */
+  /* 卡片（档位条、映射行、参数表）的投影、读数窗（数值框、序号键）内沿的阴影：深色下投影看不见，层级只靠明度。
+     这里不能写 none——它们会和焦点环写在同一串 box-shadow 里，而 none 不能出现在一串的中间，整条声明会作废 */
+  --card-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+  --card-shadow-hover: 0 0 0 0 rgba(0, 0, 0, 0);
+  --inset-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+  /* 读数窗（DPI 的数值框）、序号键、推子刻度各自的取值：深色下和界面通用的一致，亮色下另有一套（见下面） */
+  --val-bg: var(--bg-inset); --val-border: var(--border-strong);
+  --val-border-hover: var(--text-muted); --val-border-focus: var(--text);
+  --val-text: var(--text); --val-text-lit: var(--accent); --val-selection: var(--selection);
+  --val-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+  --idx-bg: var(--bg-inset); --idx-border: var(--border-strong);
+  --tick: var(--border-strong);
+  --lit-text: #fff;                                 /* 亮着的键面上的字和灯（深色下键面是浅的，亮色下是墨色的） */
+  --lit-halo: 0 0 6px rgba(255, 255, 255, .55);
+  --lit-hover-border: rgba(255, 255, 255, .32);
+  --accent-hover: #e4e4e7;
+  --accent-active: #d4d4d8;
+  /* 推子（DPI 页）：凹进去的槽、槽里亮着的档位色、平涂的推子帽。各状态的取值见「推子」那一节 */
+  --slot: #0a0a0b;
+  --slot-shadow: inset 0 1px 1px rgba(0, 0, 0, .9), inset 0 -1px 0 rgba(255, 255, 255, .06);
+  --tick: var(--border-strong);                    /* 推子的刻度 */
+  /* 推子帽：中性的浅灰白，悬停提亮、按住变白。不能带暖色——原来是米色 #d6d2c8，用户说「黑色界面感觉滑动条发黄」 */
+  --fader-cap: #e6e6e8; --fader-cap-hover: #f4f4f5; --fader-cap-active: #ffffff;
+  --fader-cap-line: #161618; --fader-cap-ring: #000;
+  --fader-cap-shadow: 0 2px 4px rgba(0, 0, 0, .55);
+  --fader-cap-shadow-hover: 0 3px 6px rgba(0, 0, 0, .55);
+  --fader-cap-shadow-active: 0 1px 2px rgba(0, 0, 0, .6);
+  --fader-halo: rgba(255, 255, 255, .16); --fader-halo-active: rgba(255, 255, 255, .24);
+  --fill-shadow: inset 0 1px 1px rgba(0, 0, 0, .45);
+  --fill-glow: 85%;                                /* 按住时亮段泛出的档位色的浓度 */
+  --screen-dots: rgba(255, 255, 255, .05);          /* 读数屏的点阵 */
+  --pop-shadow: rgba(0, 0, 0, .62);                 /* 托盘浮层是飘在桌面上的，投影更重 */
+  --art-outline: rgba(255, 255, 255, .62);          /* 读数屏里那只线稿鼠标 */
+  --art-seam: rgba(255, 255, 255, .14);
+  --art-wheel: rgba(255, 255, 255, .22);
+  --art-led: rgba(255, 255, 255, .08);
+  --art-led-glow: drop-shadow(0 0 4px rgba(255, 255, 255, .22));
+  --art-shadow: .5;
+}
+
+/* ── 亮色主题 ──
+   同一套形态，颜色整体翻过来：中性无色偏的浅灰做底，墨色（而不是白色）是唯一的信号色。
+   整块墨色的面只留给主按钮和当前档的序号（对应深色下整块的白）。
+   深浅三级仍然是 底 → 卡片 → 按键（越来越亮），凹进去的地方是比底更深的灰。
+   但深色那套「抬起来 = 面更亮」在这里翻不过来：卡片和键已经是最亮的白。抬起来改用光来表达——
+   卡片是浅灰桌面上的白面，带一道投影；选中的键是白面加一圈墨色的边。不往面上掺灰：
+   掺了灰的卡片发闷，灰键面配绿字发脏，上沿的高光在灰面上还会变成一条白线（这两版都被用户退了回来）。
+   读数窗也不跟着变浅：浅灰的窗只是一块灰底，白面上一块烟灰色的玻璃才像显示屏（深色主题里好看的就是这块深色的窗）。 */
+[data-mode="light"] {
+  --bg: #f1f1f2;
+  --bg-card: #ffffff;
+  --bg-card-hover: #ffffff;                         /* 悬停不换底色：抬起靠位置和投影（见 .stage 的亮色规则） */
+  --bg-inset: #e8e8ea;
+  --bg-popover: #fcfcfc;
+  --border: rgba(0, 0, 0, .09);
+  --border-subtle: #e5e5e7;
+  --border-strong: #c6c6ca;
+  --border-hover: #adadb2;
+  --track: #c9c9ce;
+
+  --key: #ffffff;
+  --key-hover: #f3f3f4;
+  --key-border: #d1d1d4;
+  /* 选中的键：白面 + 一圈墨色的边，再加粗的字和右上角的灯。深色下选中是「面比旁边的浅一点」，
+     这里面已经是最亮的，改成用边线把这一颗圈出来 */
+  --key-lit: #ffffff;
+  --key-lit-hover: #f3f3f4;
+  --key-lit-border: #141416;
+
+  --text: #1b1b1e;
+  --text-dim: #5c5c63;
+  --text-muted: #7a7a81;
+
+  --accent: #141416;
+  --on-accent: #ffffff;
+  --accent-soft: rgba(0, 0, 0, .07);
+  --accent-border: rgba(0, 0, 0, .3);
+  --success: #0e7f52;
+  --warning: #9a6206;
+  --danger: #d23a41;
+  --danger-soft: rgba(210, 58, 65, .11);
+
+  --hover: rgba(0, 0, 0, .045);
+  --pressed: rgba(0, 0, 0, .07);
+  --led-halo: 0 0 5px rgba(0, 0, 0, .28);
+  --status-halo: 0 0 6px rgba(14, 127, 82, .4);
+  --danger-halo: 0 0 6px rgba(210, 58, 65, .4);
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, .14), 0 0 0 1px rgba(0, 0, 0, .06);
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px rgba(0, 0, 0, .55);
+
+  --window-edge: rgba(0, 0, 0, .16);
+  --selection: rgba(0, 0, 0, .16);
+  --scrollbar: #c2c2c6;
+  --flash-rgb-key: 0 0 0;
+  --flash-rgb-cta: 255 255 255;
+  --flash-overlay: rgba(0, 0, 0, .13);
+  --key-bevel: inset 0 1px 0 rgba(255, 255, 255, .9), 0 1px 0 rgba(0, 0, 0, .08);
+  --key-bevel-hover: inset 0 1px 0 rgba(255, 255, 255, .9), 0 1px 0 rgba(0, 0, 0, .08);
+  --key-press: inset 0 1px 2px rgba(0, 0, 0, .16);
+  --lit-text: #141416;                             /* 选中的键：墨色的字和灯 */
+  --lit-halo: 0 0 5px rgba(0, 0, 0, .22);
+  --lit-hover-border: #000000;
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, .05), 0 4px 10px -4px rgba(0, 0, 0, .13);
+  --card-shadow-hover: 0 2px 4px rgba(0, 0, 0, .06), 0 14px 24px -10px rgba(0, 0, 0, .26);
+  --inset-shadow: inset 0 1px 2px rgba(0, 0, 0, .09), inset 0 0 0 1px rgba(0, 0, 0, .02);
+  /* 读数窗：烟灰色的玻璃——上沿一道高光，里面一层内阴影；字是亮的，选中时的选区也得是亮的 */
+  --val-bg: #3b3b41;
+  --val-border: #2c2c31;
+  --val-border-hover: rgba(255, 255, 255, .14);
+  --val-border-focus: rgba(255, 255, 255, .38);
+  --val-text: #fbfbfc;
+  --val-text-lit: #ffffff;
+  --val-selection: rgba(255, 255, 255, .24);
+  --val-shadow: inset 0 1px 0 rgba(255, 255, 255, .09), inset 0 2px 4px rgba(0, 0, 0, .3);
+  --idx-bg: #ececef; --idx-border: rgba(0, 0, 0, .05);
+  --tick: #b4b4ba;
+  --accent-hover: #2a2a2e;
+  --accent-active: #000000;
+  /* 推子：槽是墨色（和当前档的白条、序号键同一个墨色），推子帽是纯白。不用深灰和浅灰——
+     用户说「白色界面感觉滑动条发灰」，灰在这儿是脏的，黑白才是干净的 */
+  --slot: #141416;
+  --slot-shadow: inset 0 -1px 0 rgba(255, 255, 255, .1);
+  --fader-cap: #ffffff; --fader-cap-hover: #ffffff; --fader-cap-active: #ffffff;
+  --fader-cap-line: #141416; --fader-cap-ring: #141416;
+  --fader-cap-shadow: 0 1px 2px rgba(0, 0, 0, .3);
+  --fader-cap-shadow-hover: 0 2px 5px rgba(0, 0, 0, .3);
+  --fader-cap-shadow-active: 0 1px 2px rgba(0, 0, 0, .4);
+  --fader-halo: rgba(0, 0, 0, .1); --fader-halo-active: rgba(0, 0, 0, .16);
+  --screen-dots: rgba(0, 0, 0, .055);
+  --pop-shadow: rgba(0, 0, 0, .22);
+  --art-outline: rgba(0, 0, 0, .58);
+  --art-seam: rgba(0, 0, 0, .14);
+  --art-wheel: rgba(0, 0, 0, .24);
+  --art-led: rgba(0, 0, 0, .07);
+  --art-led-glow: drop-shadow(0 0 3px rgba(0, 0, 0, .18));
+  --art-shadow: .14;
 }
 
 /* ── 基础 ── */
@@ -93,7 +242,7 @@ body {
   font: 400 var(--fs-13)/1.5 var(--font); color: var(--text);
   background: var(--bg); height: 100vh; display: flex; flex-direction: column; overflow: hidden;
   user-select: none; -webkit-font-smoothing: antialiased;
-  border-radius: 8px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .1);
+  border-radius: 8px; box-shadow: inset 0 0 0 1px var(--window-edge);
 }
 body.maximized { border-radius: 0; box-shadow: none; }
 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
@@ -111,9 +260,9 @@ svg { display: block; }
 input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; appearance: none; margin: 0; }
 input[type="number"] { appearance: textfield; }
-::selection { background: rgba(255, 255, 255, .22); }
+::selection { background: var(--selection); }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: #2e2e32; border: 3px solid transparent; background-clip: padding-box; border-radius: 8px; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar); border: 3px solid transparent; background-clip: padding-box; border-radius: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
 .main { scrollbar-gutter: stable; }
 
@@ -162,17 +311,17 @@ input[type="number"] { appearance: textfield; }
 }
 /* 用到键面上的几类元素都带上这一层。亮着的主按钮是白的，叠白色看不出来，换成压暗 */
 .key, .cta, .stage .x, .item .x {
-  --flash-rgb: 255 255 255;
+  --flash-rgb: var(--flash-rgb-key);
   background-image: linear-gradient(
     rgb(var(--flash-rgb) / calc(var(--flash, 0) * 1%)),
     rgb(var(--flash-rgb) / calc(var(--flash, 0) * 1%))
   );
 }
 .flash, .cta.ignite { animation: key-flash var(--t-base) var(--ease-out); }
-.cta:not(.idle) { --flash-rgb: 0 0 0; }
-/* 菜单项是透明的，用一层白色蒙层做点击回执 */
+.cta:not(.idle) { --flash-rgb: var(--flash-rgb-cta); }
+/* 菜单项是透明的，用一层蒙层做点击回执（蒙层的颜色和浓度在令牌 --flash-overlay 里） */
 @keyframes overlay-flash {
-  from { opacity: .16; }
+  from { opacity: 1; }
   to { opacity: 0; }
 }
 @keyframes led-blink { 50% { opacity: .25; } }
@@ -180,12 +329,12 @@ input[type="number"] { appearance: textfield; }
 .value-flash { animation: value-flash var(--t-base) var(--ease-out); }
 .fade-in { animation: fade-in var(--t-base) var(--ease-out); }
 .rise-in { animation: rise-in var(--t-base) var(--ease-out); }
-/* 切换语言：全文一瞬间换掉太生硬，整窗快速亮一下表示「换过了」 */
+/* 切换语言 / 主题：整窗一瞬间换掉太生硬，快速亮一下表示「换过了」 */
 @keyframes lang-switched {
   from { opacity: .35; }
   to { opacity: 1; }
 }
-body.lang-switched { animation: lang-switched var(--t-base) var(--ease-out); }
+body.lang-switched, body.theme-switched { animation: lang-switched var(--t-base) var(--ease-out); }
 
 /* 指示灯：亮灭有过渡（120ms），不弹跳 */
 .led {
@@ -297,7 +446,7 @@ body.lang-switched { animation: lang-switched var(--t-base) var(--ease-out); }
   height: var(--ctl-h); padding: 0 12px; border-radius: var(--radius-sm);
   font: 400 var(--fs-12)/1 var(--font-mono); white-space: nowrap;
   background-color: var(--key); border: 1px solid var(--key-border); color: var(--text-dim);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04), 0 1px 0 rgba(0, 0, 0, .6);
+  box-shadow: var(--key-bevel);
   transition: background-color var(--t-fast) var(--ease-state), border-color var(--t-fast) var(--ease-state),
               color var(--t-fast) var(--ease-state), opacity var(--t-fast) var(--ease-state),
               box-shadow var(--t-press) var(--ease-out), transform var(--t-press) var(--ease-out);
@@ -306,19 +455,20 @@ body.lang-switched { animation: lang-switched var(--t-base) var(--ease-out); }
 .key.strong { font-weight: 600; color: var(--text); }
 .key:hover:not(:disabled) { background-color: var(--key-hover); border-color: var(--border-hover); color: var(--text); }
 .key:active:not(:disabled) {
-  background-color: var(--key); transform: translateY(1px); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .6);
+  background-color: var(--key); transform: translateY(1px); box-shadow: var(--key-press);
   transition-duration: 30ms; /* 按下要立刻到位；松开再按 70ms 回弹 */
 }
-/* 点亮 = 选中：白字 + 右上角白灯。灯常驻在原位，亮灭靠透明度和缩放过渡 */
+/* 点亮 = 选中：白字 + 右上角白灯。灯常驻在原位，亮灭靠透明度和缩放过渡。
+   亮着的键面上那颗灯的颜色跟文字走（--lit-text），两种主题下都看得见 */
 .key::after {
   content: ""; position: absolute; top: 5px; right: 5px; width: 4px; height: 4px; border-radius: 50%;
   background: var(--accent); box-shadow: var(--led-halo);
   opacity: 0; transform: scale(.4);
   transition: opacity var(--t-fast) var(--ease-state), transform var(--t-fast) var(--ease-out);
 }
-.key.lit::after { opacity: 1; transform: none; }
-.key.lit { background-color: var(--key-lit); border-color: var(--key-lit-border); color: #fff; font-weight: 600; }
-.key.lit:hover:not(:disabled) { background-color: var(--key-lit-hover); border-color: rgba(255, 255, 255, .32); color: #fff; }
+.key.lit::after { opacity: 1; transform: none; background: var(--lit-text); box-shadow: var(--lit-halo); }
+.key.lit { background-color: var(--key-lit); border-color: var(--key-lit-border); color: var(--lit-text); font-weight: 600; }
+.key.lit:hover:not(:disabled) { background-color: var(--key-lit-hover); border-color: var(--lit-hover-border); color: var(--lit-text); }
 /* 绿字 = 鼠标正在运行的那一份配置（只用在底栏的配置键上）。
    优先级要压过 .lit 的白字和各种 hover 态，所以选择器写得比较长 */
 .key.inuse,
@@ -357,11 +507,11 @@ select.key.sel option { background: var(--bg-popover); color: var(--text); }
 .winctl .key .ico { width: 13px; height: 13px; stroke-width: 1.15; }
 .winctl .key:hover:not(:disabled) {
   background-color: var(--key-hover); border-color: var(--key-border); color: var(--text);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 1px 0 rgba(0, 0, 0, .6);
+  box-shadow: var(--key-bevel-hover);
 }
 .winctl .key:active:not(:disabled) {
   background-color: var(--key); border-color: var(--key-border); color: var(--text);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, .6);
+  box-shadow: var(--key-press);
 }
 .winctl .key.close:hover:not(:disabled) {
   background-color: var(--win-close); border-color: rgba(255, 255, 255, .16); color: #fff;
@@ -381,12 +531,12 @@ select.key.sel option { background: var(--bg-popover); color: var(--text); }
 .cta {
   height: var(--ctl-h); padding: 0 16px; border-radius: var(--radius-sm);
   border: 1px solid transparent;
-  background-color: var(--accent); color: var(--on-accent); font: 700 var(--fs-125)/1 var(--font);
+  background-color: var(--accent); color: var(--on-accent); font: 700 var(--fs-125)/1 var(--font); white-space: nowrap;
   transition: background-color var(--t-fast) var(--ease-state), border-color var(--t-fast) var(--ease-state),
               color var(--t-fast) var(--ease-state), transform var(--t-press) var(--ease-out);
 }
-.cta:hover:not(:disabled) { background-color: #e4e4e7; }
-.cta:active:not(:disabled) { background-color: #d4d4d8; transform: translateY(1px); }
+.cta:hover:not(:disabled) { background-color: var(--accent-hover); }
+.cta:active:not(:disabled) { background-color: var(--accent-active); transform: translateY(1px); }
 .cta.idle { background-color: transparent; border-color: var(--border-subtle); color: var(--text-muted); font-weight: 600; }
 /* 从熄灭到点亮的那一下：键面闪一下（.ignite，动画见开头的「点击回执」） */
 
@@ -419,33 +569,66 @@ input:disabled + .tog { opacity: .4; border-color: var(--border-strong); }
 }
 .stepper .sval:not(input) { display: inline-block; padding-top: 4px; }
 
-/* ── 推子：轨道 + 刻度尺 + 金属推子帽 ──
-   --sw / --fill 由渲染层写在元素上：档位色、已填充比例。
-   刻度是稀疏的两级：每 1/8 一道短线，两端和 1/4、1/2、3/4 处一道长线。
-   以前是每 2% 一道细线（50 道），挨着数值框看像一串「1」；刻度尺的意思靠长短和疏密表达就够了 */
+/* ── 推子：凹槽 + 亮着的档位色 + 平涂的推子帽 ──
+   交互全交给原生的 <input type="range">（拖动、方向键、焦点、读屏都是现成的）：它画成透明的，铺满整个 .slider；
+   看得见的三样是垫在它下面的独立元素——槽、亮段、推子帽。这样帽子的悬停、按下才有过渡，别处改了数值还能滑过去
+   （原生滑块的帽子上做不了这些；以前悬停是瞬间变成白的，用户说「没有过渡动画」）。
+   --sw 是档位色（写在行上），--p 是 0..1 的位置（app.js 写在 .slider 上）。原生滑块的帽子和推子帽一样宽，
+   所以点在哪里、推子帽的中心就落在哪里。
+   刻度是稀疏的两级：每 1/8 一道短线，两端和 1/4、1/2、3/4 处一道长线（以前是每 2% 一道，挨着数值框看像一串「1」） */
+.slider { position: relative; flex: 1; min-width: 80px; height: 28px; --cap-w: 14px; --p: 0; }
 .fader {
   -webkit-appearance: none; appearance: none;
-  flex: 1; min-width: 80px; height: 22px; margin: 0; cursor: pointer;
+  position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; cursor: pointer;
   background:
-    linear-gradient(var(--border-strong), var(--border-strong)) right bottom / 1px 7px no-repeat,
-    repeating-linear-gradient(90deg, var(--border-strong) 0 1px, transparent 1px 25%) left bottom / calc(100% - 1px) 7px no-repeat,
-    repeating-linear-gradient(90deg, var(--border-strong) 0 1px, transparent 1px 12.5%) left bottom / calc(100% - 1px) 4px no-repeat;
+    linear-gradient(var(--tick), var(--tick)) right bottom / 1px 8px no-repeat,
+    repeating-linear-gradient(90deg, var(--tick) 0 1px, transparent 1px 25%) left bottom / calc(100% - 1px) 8px no-repeat,
+    repeating-linear-gradient(90deg, var(--tick) 0 1px, transparent 1px 12.5%) left bottom / calc(100% - 1px) 5px no-repeat;
 }
-.fader::-webkit-slider-runnable-track {
-  height: 3px; border-radius: 2px;
-  background: linear-gradient(var(--sw), var(--sw)) 0 / var(--fill, 0%) 100% no-repeat, var(--track);
+.fader::-webkit-slider-runnable-track { height: 100%; background: none; }
+.fader::-webkit-slider-thumb { -webkit-appearance: none; width: var(--cap-w); height: 100%; background: transparent; }
+.fader:focus-visible { outline: none; box-shadow: none; } /* 焦点由推子帽上的光环表达 */
+.slider-slot, .slider-fill { position: absolute; top: 50%; height: 6px; margin-top: -3px; border-radius: 3px; pointer-events: none; }
+.slider-slot { left: 0; right: 0; background: var(--slot); box-shadow: var(--slot-shadow); }
+/* 亮段从槽的左端通到推子帽的中心（右半截藏在帽子下面） */
+.slider-fill {
+  left: 0; width: calc(var(--cap-w) / 2 + (100% - var(--cap-w)) * var(--p)); border-radius: 3px 0 0 3px;
+  background: var(--sw); box-shadow: var(--fill-shadow);
+  transition: box-shadow var(--t-fast) var(--ease-state);
 }
-/* 推子帽：中间一道细刻线。线太粗会把帽子劈成上下两块，挨着数字看像个「8」 */
-.fader::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 12px; height: 16px; margin-top: -6.5px; border-radius: 2px; border: 0;
-  background: linear-gradient(var(--bg-card), var(--bg-card)) center / 100% 1px no-repeat, #d6d2c8;
-  box-shadow: 0 0 0 1px #000, 0 2px 4px rgba(0, 0, 0, .55);
+/* 推子帽：平涂的一块，一圈描边，中间一道细刻线（线太粗会把帽子劈成上下两块，挨着数字看像个「8」）。
+   不加高光渐变——这套界面是平涂的，上一版给帽子上了由浅到深的高光，用户说「灰色渐变不符合当前的简洁风」 */
+.slider-cap {
+  position: absolute; top: 50%; left: calc((100% - var(--cap-w)) * var(--p));
+  width: var(--cap-w); height: 20px; margin-top: -10px; border-radius: 3px; pointer-events: none;
+  background-color: var(--fader-cap);
+  box-shadow: 0 0 0 1px var(--fader-cap-ring), var(--fader-cap-shadow);
+  transition: background-color var(--t-fast) var(--ease-state), box-shadow var(--t-fast) var(--ease-state);
 }
-.fader:hover::-webkit-slider-thumb, .fader:focus-visible::-webkit-slider-thumb {
-  background: linear-gradient(var(--bg-card), var(--bg-card)) center / 100% 1px no-repeat, #fff;
-  box-shadow: 0 0 0 1px #000, 0 2px 4px rgba(0, 0, 0, .55), 0 0 0 5px rgba(255, 255, 255, .14);
+.slider-cap::after {
+  content: ""; position: absolute; left: 3px; right: 3px; top: 50%; height: 1px; margin-top: -.5px;
+  background: var(--fader-cap-line);
 }
-.fader:focus-visible { outline: none; box-shadow: none; }
+/* 悬停：帽子提亮、投影加深、外面一圈薄薄的光环；按住：帽子变白压下去，亮段泛出档位色 */
+.slider:has(.fader:hover) .slider-cap, .slider:has(.fader:focus-visible) .slider-cap {
+  background-color: var(--fader-cap-hover);
+  box-shadow: 0 0 0 1px var(--fader-cap-ring), var(--fader-cap-shadow-hover), 0 0 0 3px var(--fader-halo);
+}
+.slider:has(.fader:active) .slider-cap {
+  background-color: var(--fader-cap-active);
+  box-shadow: 0 0 0 1px var(--fader-cap-ring), var(--fader-cap-shadow-active), 0 0 0 3px var(--fader-halo-active);
+}
+.slider:has(.fader:active) .slider-fill {
+  box-shadow: var(--fill-shadow), 0 0 10px color-mix(in srgb, var(--sw) var(--fill-glow), transparent);
+}
+/* 别处改了数值（数值框里敲一个数、拨 XY 开关）：推子帽滑过去而不是跳过去。拖动和方向键是即时的，不带 .gliding */
+.slider.gliding .slider-cap {
+  transition: background-color var(--t-fast) var(--ease-state), box-shadow var(--t-fast) var(--ease-state),
+              left var(--t-base) var(--ease-out);
+}
+.slider.gliding .slider-fill {
+  transition: box-shadow var(--t-fast) var(--ease-state), width var(--t-base) var(--ease-out);
+}
 
 /* ── 布局骨架：标题栏 / 菜单 + 内容 + 读数屏 / 底栏 ── */
 .work { flex: 1; min-height: 0; display: flex; }
@@ -482,8 +665,8 @@ input:disabled + .tog { opacity: .4; border-color: var(--border-strong); }
   transition: opacity var(--t-fast) var(--ease-state), transform var(--t-fast) var(--ease-out);
 }
 .menu button.active::before { opacity: 1; transform: none; }
-/* 点击回执用的白色蒙层（菜单项本身是透明的，提亮背景得靠它） */
-.menu button::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: #fff; opacity: 0; pointer-events: none; }
+/* 点击回执用的蒙层（菜单项本身是透明的，提亮 / 压暗背景得靠它） */
+.menu button::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--flash-overlay); opacity: 0; pointer-events: none; }
 .menu button.flash { animation: none; }
 .menu button.flash::after { animation: overlay-flash var(--t-base) var(--ease-out); }
 .menu .ver { margin-top: auto; display: flex; align-items: center; justify-content: space-between; padding: 8px 0 0 2px; }
@@ -500,7 +683,7 @@ input:disabled + .tog { opacity: .4; border-color: var(--border-strong); }
 .screen {
   flex: 1; display: flex; flex-direction: column; min-height: 0; padding: 14px 16px 12px;
   background-color: var(--bg-inset);
-  background-image: radial-gradient(rgba(255, 255, 255, .05) 1px, transparent 1.4px);
+  background-image: radial-gradient(var(--screen-dots) 1px, transparent 1.4px);
   background-size: 12px 12px; background-position: 6px 6px;
   border: 1px solid var(--border); border-radius: var(--radius);
 }
@@ -530,21 +713,28 @@ input:disabled + .tog { opacity: .4; border-color: var(--border-strong); }
 /* 绿字 = 鼠标正在运行的那一份配置（与底栏配置键的含义一致） */
 .srow .v.run { color: var(--success); }
 /* 鼠标线稿：灯点的颜色跟当前档位，换档时颜色渐变过去 */
-.mouse-shadow { fill: #000; opacity: .5; }
-.mouse-outline { fill: none; stroke: rgba(255, 255, 255, .62); stroke-width: 1.1; }
-.mouse-seamL, .mouse-seamR { fill: none; stroke: rgba(255, 255, 255, .14); stroke-width: 1.1; }
-.mouse-wheel { fill: none; stroke: rgba(255, 255, 255, .22); stroke-width: 1.1; }
-.mouse-led { fill: rgba(255, 255, 255, .08); stroke: transparent; transition: fill var(--t-base) var(--ease-state); }
-.screen.connected .mouse-led { fill: var(--sw, #fff); filter: drop-shadow(0 0 4px rgba(255, 255, 255, .22)); }
+.mouse-shadow { fill: #000; opacity: var(--art-shadow); }
+.mouse-outline { fill: none; stroke: var(--art-outline); stroke-width: 1.1; }
+.mouse-seamL, .mouse-seamR { fill: none; stroke: var(--art-seam); stroke-width: 1.1; }
+.mouse-wheel { fill: none; stroke: var(--art-wheel); stroke-width: 1.1; }
+.mouse-led { fill: var(--art-led); stroke: transparent; transition: fill var(--t-base) var(--ease-state); }
+.screen.connected .mouse-led { fill: var(--sw, var(--accent)); filter: var(--art-led-glow); }
 
 /* ── DPI：档位通道条 ── */
 .stages { position: relative; display: flex; flex-direction: column; gap: 6px; }
 .stage {
   position: relative; display: flex; align-items: center; gap: 14px; min-height: 54px; padding: 8px 12px 8px 16px;
   background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer;
+  box-shadow: var(--card-shadow);
   transition: border-color var(--t-fast) var(--ease-state), background-color var(--t-fast) var(--ease-state);
 }
-.stage:hover { border-color: var(--border-strong); background: var(--bg-card-hover); }
+.stage:hover { border-color: var(--border-strong); background: var(--bg-card-hover); box-shadow: var(--card-shadow-hover); }
+/* 亮色主题：面已经是最亮的白，悬停只能是边线加深、投影加深。**不许位移**——行一浮动，鼠标底下的内容就跟着跑，
+   没法快速定位（2026-11-27 用户：「我不是让整条浮动」）。焦点环要即时出现，所以聚焦期间投影那一段不走过渡 */
+[data-mode="light"] .stage {
+  transition: border-color var(--t-fast) var(--ease-state), box-shadow var(--t-fast) var(--ease-state);
+}
+[data-mode="light"] .stage[tabindex]:focus-visible { transition: none; }
 .stage:has(input:focus) { cursor: default; }
 .stage.current { border-color: var(--accent-border); }
 /* 当前档左侧的白条：常驻在原位，靠纵向伸缩亮起 / 收回 */
@@ -554,31 +744,52 @@ input:disabled + .tog { opacity: .4; border-color: var(--border-strong); }
   transition: transform var(--t-base) var(--ease-out);
 }
 .stage.current::before { transform: none; }
-.stage[tabindex]:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.stage[tabindex]:focus-visible { outline: none; box-shadow: var(--focus-ring), var(--card-shadow); }
 .stage .idx {
   flex: none; width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center;
-  border-radius: var(--radius-sm); background: var(--bg-inset); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm); background: var(--idx-bg); border: 1px solid var(--idx-border);
+  box-shadow: var(--inset-shadow);
   font: 400 var(--fs-12) var(--font-mono); color: var(--text-dim);
   transition: background-color var(--t-fast) var(--ease-state), border-color var(--t-fast) var(--ease-state),
               color var(--t-fast) var(--ease-state);
 }
 .stage.current .idx { background: var(--accent); border-color: transparent; color: var(--on-accent); font-weight: 600; }
-.stage .lanes { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.stage .lane { display: flex; align-items: center; gap: 12px; min-height: 32px; }
-.stage .lane + .lane { border-top: 1px dashed var(--border-subtle); padding-top: 4px; }
-.stage .lane.enter { animation: rise-in var(--t-base) var(--ease-out); }
-.stage .axis { flex: none; width: 12px; font: 400 var(--fs-10) var(--font-mono); color: var(--text-muted); }
+.stage .lanes { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.stage .lane { display: flex; align-items: center; min-height: 32px; }
+.stage .lane .slider { margin-left: 12px; }
+/* 第二条轴（Y）平时就收在每一行里，XY 分离只是把它展开：靠网格行高在 0fr ↔ 1fr 之间过渡（同宏页的「次数」行），
+   行高、序号键的位置、下面的行都由它连续带着走；中途再拨一下，从当前的样子接回去 */
+.stage .lane2 {
+  display: grid; grid-template-rows: 0fr; opacity: 0;
+  transition: grid-template-rows var(--t-base) var(--ease-out), opacity var(--t-base) var(--ease-out);
+}
+.stage.split .lane2 { grid-template-rows: 1fr; opacity: 1; }
+/* 被裁的是这一层，它自己不能有内边距、边框和间距——0fr 时轨道的高度是这个子项的最小贡献，
+   带了这些就收不到 0（头一版直接裁在轴上，每一行悄悄高了 5px）。轴的虚线和间距放在里面那一层 */
+.stage .lane2 > .clip { overflow: hidden; min-height: 0; }
+.stage .lane2 .lane { margin-top: 4px; padding-top: 4px; border-top: 1px dashed var(--border-subtle); }
+/* 轴名：不分离时第一条轴不带名字；分离后两条都带（X / Y），两个数值框才是对齐的。
+   宽度、间距和透明度一起过渡，数值框和推子是让出位置而不是跳过去 */
+.stage .axis {
+  flex: none; width: 0; margin-right: 0; overflow: hidden; white-space: nowrap; opacity: 0;
+  font: 400 var(--fs-10) var(--font-mono); color: var(--text-muted);
+  transition: width var(--t-base) var(--ease-out), margin var(--t-base) var(--ease-out), opacity var(--t-base) var(--ease-out);
+}
+.stage.split .axis { width: 12px; margin-right: 12px; opacity: 1; }
 .stage .val {
   flex: none; width: 100px; height: 32px; padding: 4px 10px; border-radius: var(--radius-sm); text-align: right;
-  background: var(--bg-inset); border: 1px solid var(--border-strong);
-  font: 400 var(--fs-20)/1.2 var(--font-mono); color: var(--text);
+  background: var(--val-bg); border: 1px solid var(--val-border); box-shadow: var(--val-shadow);
+  --selection: var(--val-selection); /* 亮色主题里窗是深的，选区不能沿用界面那套黑的 */
+  font: 400 var(--fs-20)/1.2 var(--font-mono); color: var(--val-text);
   transition: border-color var(--t-fast) var(--ease-state), color var(--t-fast) var(--ease-state);
 }
-.stage:hover .val { border-color: var(--text-muted); }
-.stage .val:focus { border-color: var(--text); }
-.stage .val:focus-visible { box-shadow: none; }
-.stage.current .val { color: #fff; font-weight: 600; }
+.stage:hover .val { border-color: var(--val-border-hover); }
+.stage .val:focus { border-color: var(--val-border-focus); }
+.stage .val:focus-visible { box-shadow: var(--val-shadow); }
+.stage.current .val { color: var(--val-text-lit); font-weight: 600; }
 .stage .lamp { flex: none; width: 10px; height: 10px; margin: 0 4px; border-radius: 50%; background: var(--sw); }
+/* 亮色主题里给档位灯加一圈细边：黄、青这些浅色画在白底上几乎看不见 */
+[data-mode="light"] .stage .lamp { box-shadow: 0 0 0 1px rgba(0, 0, 0, .2); }
 .stage .x {
   flex: none; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center;
   border-radius: 3px; color: var(--text-muted); font-size: calc(14px * var(--ui-scale));
@@ -587,7 +798,7 @@ input:disabled + .tog { opacity: .4; border-color: var(--border-strong); }
 }
 .stage .x:hover { color: var(--danger); background-color: var(--danger-soft); }
 /* 按下只有外壳的反应（和按键一致的内阴影）；✕ 本身不缩放 */
-.stage .x:active, .item .x:active { box-shadow: inset 0 1px 2px rgba(0, 0, 0, .6); }
+.stage .x:active, .item .x:active { box-shadow: var(--key-press); }
 /* 列表里新出现的一行 */
 .stage.enter, .item.enter { animation: row-in var(--t-base) var(--ease-out); }
 /* 删掉一行时留在原位的残影（不占布局，淡出后由 app.js 移除）。
@@ -601,7 +812,7 @@ input:disabled + .tog { opacity: .4; border-color: var(--border-strong); }
 .stage-foot .note { font-size: var(--fs-11); color: var(--text-muted); }
 
 /* ── 性能：参数表 ── */
-.panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); }
+.panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--card-shadow); }
 .panel > h3 {
   display: flex; align-items: center; justify-content: space-between;
   padding: 9px 16px; border-bottom: 1px solid var(--border-subtle);
@@ -630,9 +841,12 @@ input:disabled + .tog { opacity: .4; border-color: var(--border-strong); }
   display: flex; flex-wrap: wrap; align-items: center; align-content: center; gap: 6px 12px;
   min-height: 50px; padding: 6px 12px 6px 16px;
   background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--card-shadow);
   transition: border-color var(--t-fast) var(--ease-state), background-color var(--t-fast) var(--ease-state);
 }
-.brow:hover { border-color: var(--border-strong); background: var(--bg-card-hover); }
+.brow:hover { border-color: var(--border-strong); background: var(--bg-card-hover); box-shadow: var(--card-shadow-hover); }
+/* 亮色主题里映射行和档位条是同一种悬停：边线和投影变，位置不变（原因见 .stage） */
+[data-mode="light"] .brow { transition: border-color var(--t-fast) var(--ease-state), box-shadow var(--t-fast) var(--ease-state); }
 .brow .no { flex: none; width: 18px; font: 400 var(--fs-11) var(--font-mono); color: var(--text-muted); }
 .brow .bname { flex: none; width: 5.4em; font-size: var(--fs-125); white-space: nowrap; }
 .brow .grow { flex: 1 1 5em; min-width: 5em; }
@@ -649,7 +863,7 @@ input:disabled + .tog { opacity: .4; border-color: var(--border-strong); }
               background-color var(--t-fast) var(--ease-state), box-shadow var(--t-fast) var(--ease-state);
 }
 .slots .key.has::before { opacity: 1; transform: none; }
-.slots .key.has.lit::before { background: var(--accent); box-shadow: var(--led-halo); }
+.slots .key.has.lit::before { background: var(--lit-text); box-shadow: var(--lit-halo); }
 .macro-grid { display: grid; grid-template-columns: minmax(0, 20.6em) minmax(0, 1fr); gap: 12px; align-items: start; margin-top: 12px; }
 /* 两栏放不下时（窗口窄，或界面放大后字号变大）：把两个小面板并排、动作列表放到下面。
    放不放得下要同时看窗口宽度和界面缩放，由 app.js 按内容区实际宽度判断后给 body 加 compact-main */
@@ -681,7 +895,7 @@ input:disabled + .tog { opacity: .4; border-color: var(--border-strong); }
 }
 .item .no { font: 400 var(--fs-11) var(--font-mono); color: var(--text-muted); text-align: right; }
 .item .dir { padding: 2px 0; border-radius: 3px; text-align: center; font-size: var(--fs-11); }
-.item .dir.down { background: var(--accent-soft); color: #fff; font-weight: 600; }
+.item .dir.down { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .item .dir.up { color: var(--text-muted); }
 .item .cap {
   justify-self: start; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -715,11 +929,19 @@ input:disabled + .tog { opacity: .4; border-color: var(--border-strong); }
   flex: none; height: 52px; display: flex; align-items: center; gap: 10px;
   padding: 0 var(--pad-x) 0 18px; border-top: 1px solid var(--border-subtle);
 }
-.bottombar .lbl { font-size: var(--fs-12); color: var(--text-dim); }
+.bottombar .lbl { font-size: var(--fs-12); color: var(--text-dim); white-space: nowrap; flex: none; }
+/* 按钮不参与收缩：窗口窄的时候由状态文字省略（它有 min-width: 0），按钮不折行、不变形 */
+.bottombar > .key, .bottombar > .cta { flex: none; }
 .bottombar .profiles { display: flex; gap: 4px; }
 .bottombar .profiles .key { width: 28px; height: 28px; padding: 0; }
 .bottombar .spacer { flex: 1; }
-/* 底栏的状态灯：白 = 有未应用的修改，闪烁 = 正在写入，绿 = 已应用，红 = 失败。
+/* 恢复默认：第一下只是「上膛」——键面转成红色，等第二下确认。文字不变，底栏就不会横跳 */
+.key.reset.armed,
+.key.reset.armed:hover:not(:disabled),
+.key.reset.armed:active:not(:disabled) {
+  background-color: var(--danger-soft); border-color: var(--danger); color: var(--danger);
+}
+/* 底栏的状态灯：闪烁 = 正在写入，绿 = 已应用，红 = 失败，白 = 「恢复默认」在等第二下。
    进场从下方 4px 滑入；收起由 app.js 的 toggleShown 先快速淡出（透明度那一段也归它） */
 .apply-state { display: inline-flex; align-items: center; gap: 8px; min-width: 0; animation: rise-in var(--t-base) var(--ease-out); }
 .apply-state .status-text { color: var(--text); }

@@ -7,7 +7,7 @@
  * 两份状态，别混：
  *  - state     正在编辑的值（界面上的按键、推子、输入框都指向它）
  *  - baseline  鼠标当前实际生效的值（连接时读回、应用成功后、设备主动变更时更新）
- * 两者的差异就是「几项未应用」；读数屏显示的是 baseline，不是 state。
+ * 两者有差异时「应用配置」键才点亮；读数屏显示的是 baseline，不是 state。
  */
 
 'use strict';
@@ -46,8 +46,13 @@ let baseline = null; // 鼠标当前实际生效的值；未连接时为 null
 let applying = false; // 整套写入进行中
 let applyPhase = 'idle'; // 底栏状态灯：idle | busy | ok | bad
 let applyMsg = ''; // ok / bad 时显示的文字
-let applyTimer = null; // ok 提示 4 秒后回到「几项未应用」
+let applyTimer = null; // ok 提示 4 秒后收起
 let lastWriteAt = 0; // 最近一次「整套写入鼠标」的时间：用于忽略自身写入引起的配置序号回显
+let resetArmed = false; // 「恢复默认」已经被点了一下，等第二下确认
+let resetTimer = null;
+const RESET_ARM_MS = 6000; // 等第二下的时间，过了就当作取消
+
+import { applyTheme } from './shared/theme.js';
 
 const $ = (sel) => document.querySelector(sel);
 const t = (key, vars) => window.i18n.t(key, vars);
@@ -406,6 +411,8 @@ async function loadSettings() {
     const s = await window.api.getSettings();
     $('#setAutoLaunch').checked = !!s.autoLaunch;
     $('#setSilentStart').checked = !!s.silentStart;
+    // 主题：页面开头先照上次的镜像摆过一次，这里按真正的设置再对一遍
+    $('#setLightTheme').checked = applyTheme(document.documentElement, localStorage, s.theme) === 'light';
     const sel = $('#setUiScale');
     const allowed = ['auto', '1', '1.1', '1.25', '1.5'];
     sel.value = allowed.includes(s.uiScale) ? s.uiScale : 'auto';
@@ -580,6 +587,16 @@ function bindEvents() {
     saveSetting(e.target, { autoLaunch: e.target.checked }, () => { e.target.checked = !e.target.checked; }));
   $('#setSilentStart').addEventListener('change', (e) =>
     saveSetting(e.target, { silentStart: e.target.checked }, () => { e.target.checked = !e.target.checked; }));
+  // 亮色主题：立即换过来并存下；存不回去就换回原样
+  $('#setLightTheme').addEventListener('change', (e) => {
+    const set = (light) => {
+      e.target.checked = light;
+      applyTheme(document.documentElement, localStorage, light ? 'light' : 'dark');
+    };
+    set(e.target.checked);
+    replay(document.body, 'theme-switched'); // 和切换语言一样：整窗快速亮一下，表示换过了
+    saveSetting(e.target, { theme: e.target.checked ? 'light' : 'dark' }, () => set(!e.target.checked));
+  });
   // 界面缩放：立即生效并落盘；存不回去就缩回原样
   $('#setUiScale').addEventListener('change', (e) => {
     const before = uiScalePref;
@@ -590,10 +607,12 @@ function bindEvents() {
   document.addEventListener('click', (e) => {
     if (!e.target.closest('.lang-wrap')) closeMenu($('#langMenu'));
     if (!e.target.closest('.settings-wrap')) closeMenu($('#settingsMenu'));
+    if (!e.target.closest('#resetBtn')) disarmReset(); // 「恢复默认」等确认的时候点了别处：取消
   });
   // Esc 关闭菜单并归还焦点
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
+    disarmReset();
     if (menuOpen($('#langMenu'))) {
       closeMenu($('#langMenu'));
       $('#langBtn').focus();
@@ -602,15 +621,24 @@ function bindEvents() {
       $('#settingsBtn').focus();
     }
   });
-  // 焦点移出菜单区就收起（Tab 走出菜单时不会留一个悬空的弹层）
+  // 焦点移出菜单区就收起（Tab 走出菜单时不会留一个悬空的弹层）。
+  // 但「焦点去了 body」不一定是你离开了菜单：开关藏在 label 里，点到的拨杆和文字都不能获得焦点，
+  // 浏览器会把焦点从上一个开关挪到 body 上。所以先记下这一下按在哪里——按在同一个菜单区里的不算离开。
+  // （以前没分这一步：点完一个开关再点别的，菜单就收起了，那一下点击还落在正在退场的菜单外面，等于白点）
+  let pressedIn = null; // 最近一次按下鼠标时所在的菜单区（.lang-wrap / .settings-wrap），按在别处是 null
+  document.addEventListener('pointerdown', (e) => {
+    pressedIn = e.target instanceof Element ? e.target.closest('.lang-wrap, .settings-wrap') : null;
+  }, true);
   document.addEventListener('focusout', (e) => {
     const to = e.relatedTarget;
+    const pressed = pressedIn; // 只管紧跟着这次按下的那一次焦点变化
+    pressedIn = null;
     [['#langMenu', '.lang-wrap'], ['#settingsMenu', '.settings-wrap']].forEach(([menuSel, wrapSel]) => {
       const menu = $(menuSel);
-      if (!menuOpen(menu)) return;
-      if (e.target.closest(menuSel) && (!to || !(to instanceof Element) || !to.closest(wrapSel))) {
-        closeMenu(menu);
-      }
+      if (!menuOpen(menu) || !e.target.closest(menuSel)) return;
+      // 焦点还在菜单区里，或者只是按在了菜单区里不能获得焦点的地方：都不收
+      const stays = to instanceof Element ? !!to.closest(wrapSel) : !!pressed && pressed.matches(wrapSel);
+      if (!stays) closeMenu(menu);
     });
   });
   if (window.i18n.onLangChanged) {
@@ -681,11 +709,13 @@ function bindEvents() {
         lv.y = lv.x;
       });
     }
-    // 每一行都变高 / 变矮了：记下各行原来的位置，重排后让它们滑回去，而不是硬跳
-    const list = $('#dpiList');
-    const tops = rowTops(list);
-    renderDpi({ enterLane: state.xySplit });
-    flipRows(list, (i) => tops[i]);
+    // 行不重建：Y 轴平时就收在每一行里，这里只换 .split，行高、序号键、下面的行由 CSS 连续带着走。
+    // （以前是整表重建再让行滑回去：行是新元素，里面的序号键只能直接跳到新的位置上）
+    document.querySelectorAll('#dpiList .stage').forEach((row, i) => {
+      setSplit(row, state.xySplit);
+      row.setLaneY(state.dpiLevels[i].y, true); // 刚展开的那条轴里可能还是上次收起时的旧值：让推子帽滑到 X 的位置上
+    });
+    scheduleSave();
   });
   $('#addDpiBtn').addEventListener('click', onAddDpi);
 
@@ -711,6 +741,7 @@ function bindEvents() {
   $('#importBtn').addEventListener('click', onImportProfile);
   $('#exportBtn').addEventListener('click', onExportProfile);
   $('#applyBtn').addEventListener('click', onApply);
+  $('#resetBtn').addEventListener('click', onResetProfile);
   // 鼠标上的配置切换键：硬件只改序号，界面把对应预设立即整套灌入
   if (window.api.onProfile) {
     window.api.onProfile((idx) => {
@@ -1103,7 +1134,6 @@ function setCurrentDpi(i) {
 
 /**
  * @param opts.enterRow 新出现的行序号（淡入）
- * @param opts.enterLane 新出现的第二条轴要淡入
  * @param opts.currentIn 删掉了当前档：标记亮在接替的那一行上（行是重建的，让它淡入而不是突然出现）
  */
 function renderDpi(opts = {}) {
@@ -1115,15 +1145,19 @@ function renderDpi(opts = {}) {
   // 以前不同步，出现过「开关是关的、每一档却分成 X / Y 两行」
   $('#xySplit').checked = state.xySplit;
   renderScreen();
+  scheduleSave();
 }
 
 function stageRow(lv, i, opts = {}) {
   const current = i === state.currentDpi;
   const color = dpiColorAt(i);
+  // 两条轴都建出来：Y 轴平时收着（.lane2），拨 XY 开关时只是把它展开
+  const x = lane('X', i, 'x');
+  const y = lane('Y', i, 'y');
   const row = h(
     'div',
     {
-      class: `stage${current ? ' current' : ''}${current && opts.currentIn ? ' current-in' : ''}` +
+      class: `stage${state.xySplit ? ' split' : ''}${current ? ' current' : ''}${current && opts.currentIn ? ' current-in' : ''}` +
         `${opts.enterRow === i ? ' enter' : ''}`,
       tabindex: '0',
       role: 'button',
@@ -1131,12 +1165,11 @@ function stageRow(lv, i, opts = {}) {
       title: t('dpiSetCurrent'),
     },
     h('span', { class: 'idx', 'aria-hidden': 'true' }, String(i + 1)),
-    h('div', { class: 'lanes' },
-      lane('', i, 'x', color),
-      state.xySplit ? lane('Y', i, 'y', color, opts.enterLane) : null),
+    h('div', { class: 'lanes' }, x.el, h('div', { class: 'lane2', inert: !state.xySplit }, h('div', { class: 'clip' }, y.el))),
     h('span', { class: 'lamp', title: t('dpiColorNote') }),
     h('button', { class: 'x', type: 'button', title: t('removeDpi'), 'aria-label': t('removeDpi') }, '✕'),
   );
+  row.setLaneY = y.set;
   row.style.setProperty('--sw', color);
   // 点在输入框 / 推子 / 删除键上不算「选中这一档」
   row.addEventListener('click', (e) => {
@@ -1154,8 +1187,19 @@ function stageRow(lv, i, opts = {}) {
   return row;
 }
 
-/** 一条轴：数值框 + 推子（XY 分离时一档两条） */
-function lane(label, dpiIndex, axis, color, enter = false) {
+/** XY 开关拨过之后：把一行从「一条轴」换成「两条轴」（或反过来）。只换类名，元素不重建，过渡才接得上 */
+function setSplit(row, on) {
+  row.classList.toggle('split', on);
+  row.querySelector('.lane2').inert = !on; // 收着的那条轴看不见，也不能被 Tab 键进去
+}
+
+/**
+ * 一条轴：轴名 + 数值框 + 推子（XY 分离时一档两条）。不分离时轴名由 CSS 收起。
+ * 推子看得见的三样（槽、亮段、推子帽）是垫在原生 range 下面的独立元素，位置写在 --p 上（见 style.css 的「推子」）。
+ * set(v, glide)：原地换一个值。glide = 让推子帽滑过去（数值框里敲的数、拨 XY 开关时的 Y 轴）；
+ * 拖动和方向键走的是 range 自己的 input 事件，必须即时，不带 glide
+ */
+function lane(label, dpiIndex, axis) {
   const value = state.dpiLevels[dpiIndex][axis];
   const input = h('input', {
     type: 'number', class: 'val', min: 50, max: state.maxDpi, step: 50, title: t('dpiInputHint'),
@@ -1163,23 +1207,30 @@ function lane(label, dpiIndex, axis, color, enter = false) {
   input.value = value;
   const slider = h('input', { type: 'range', class: 'fader', min: 50, max: state.maxDpi, step: 50 });
   slider.value = value;
-  // 自绘推子靠这两个变量画「档位色 + 已填充段」
-  const syncFill = () => {
-    const min = Number(slider.min);
-    slider.style.setProperty('--sw', color);
-    slider.style.setProperty('--fill', `${((Number(slider.value) - min) / (Number(slider.max) - min)) * 100}%`);
+  const wrap = h('span', { class: 'slider' },
+    h('span', { class: 'slider-slot', 'aria-hidden': 'true' }),
+    h('span', { class: 'slider-fill', 'aria-hidden': 'true' }),
+    h('span', { class: 'slider-cap', 'aria-hidden': 'true' }),
+    slider);
+  const syncPos = () => {
+    const p = (Number(slider.value) - Number(slider.min)) / (Number(slider.max) - Number(slider.min));
+    wrap.style.setProperty('--p', String(p));
   };
-  const commit = (v) => {
-    state.dpiLevels[dpiIndex][axis] = v;
+  const set = (v, glide = false) => {
     slider.value = v;
     input.value = v;
-    syncFill();
+    wrap.classList.toggle('gliding', glide);
+    syncPos();
+  };
+  const commit = (v, glide = false) => {
+    state.dpiLevels[dpiIndex][axis] = v;
+    set(v, glide);
     markDirty();
   };
   input.addEventListener('change', () => {
     let v = parseInt(input.value, 10);
     if (isNaN(v)) v = state.dpiLevels[dpiIndex][axis]; // 非法输入回退原值
-    commit(snapDpi(v));
+    commit(snapDpi(v), true);
   });
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
@@ -1188,8 +1239,11 @@ function lane(label, dpiIndex, axis, color, enter = false) {
     }
   });
   slider.addEventListener('input', () => commit(snapDpi(parseInt(slider.value, 10))));
-  syncFill();
-  return h('div', { class: `lane${enter ? ' enter' : ''}` }, label ? h('span', { class: 'axis' }, label) : null, input, slider);
+  syncPos();
+  return {
+    el: h('div', { class: 'lane' }, h('span', { class: 'axis' }, label), input, wrap),
+    set,
+  };
 }
 
 function snapDpi(v) {
@@ -1285,6 +1339,7 @@ function renderPerformance() {
   renderLed();
   renderPerfNote(gateHighRates, esportsBlocked);
   renderApply();
+  scheduleSave();
 }
 
 function renderSleep() {
@@ -1367,7 +1422,7 @@ function nearestSleepStep(sec) {
 // ── 板载配置（5 份 PC 端预设）──────────────────────────────
 // 实测（2026-11-15，G24 有线）：把 [6,9,idx] 依次写到 0..5 再回读，DPI / 键位 /
 // 回报率 / 节能时间完全一致，只有序号标记变化 —— 硬件只有 1 份配置。
-// 所以「切换配置」只是换一份预设来编辑，点「应用到鼠标」才整套写入。
+// 所以「切换配置」只是换一份预设来编辑，点「应用配置」才整套写入。
 const DEFAULT_DPI_LEVELS = [
   { x: 400, y: 400, color: dpiColorAt(0) },
   { x: 800, y: 800, color: dpiColorAt(1) },
@@ -1457,11 +1512,12 @@ function ensureProfiles() {
   state.profile = clamp(state.profile || 0, 0, n - 1);
 }
 
-/** 换一份预设来编辑；不写鼠标（读数屏与「几项未应用」会指出它与鼠标的差异） */
+/** 换一份预设来编辑；不写鼠标（读数屏显示的仍是鼠标上的值，「应用配置」键因为两者有差异而点亮） */
 function switchProfile(index) {
   if (state.switching) return;
   const i = clamp(index, 0, profileCount() - 1);
   if (i === state.profile) return;
+  disarmReset(); // 换了一份来编辑，刚才那一下「恢复默认」不算了
   captureProfile();
   state.profile = i;
   loadProfileData(state.profiles[i]);
@@ -1470,7 +1526,7 @@ function switchProfile(index) {
   saveLocalConfig();
 }
 
-/** 把当前编辑中的配置整套写入鼠标（鼠标物理配置键专用；界面上的「应用到鼠标」走 onApply） */
+/** 把当前编辑中的配置整套写入鼠标（鼠标物理配置键专用；界面上的「应用配置」走 onApply） */
 async function applyCurrentProfile() {
   if (!state.connected) return;
   state.switching = true;
@@ -1635,6 +1691,7 @@ function renderButtons() {
       typeSeg,
       h('div', { class: 'grow' }, valueSel));
   }));
+  scheduleSave();
 }
 
 function defaultForType(type) {
@@ -1721,6 +1778,7 @@ function renderMacro(opts = {}) {
   const upload = $('#macroUploadBtn');
   upload.classList.toggle('idle', !state.connected);
   upload.disabled = !state.connected;
+  scheduleSave();
 }
 
 function renderMacroItems(m, opts = {}) {
@@ -1828,7 +1886,7 @@ function flashMacroStatus(text, isErr) {
   }
 }
 
-// ── 应用：几项未应用 ─────────────────────────────────────
+// ── 应用 ─────────────────────────────────────
 function snapshotOf() {
   return {
     buttons: JSON.stringify(state.buttons.map((b) => [b.type, b.value, b.raw ?? null])),
@@ -1865,7 +1923,7 @@ function pendingCount() {
   return n;
 }
 
-/** 有修改：清掉上一条「已应用 / 失败」，回到「几项未应用」 */
+/** 有修改：清掉上一条「已应用 / 失败」 */
 function markDirty() {
   if (applyPhase !== 'busy') applyPhase = 'idle';
   renderApply();
@@ -1885,24 +1943,30 @@ function renderApply() {
   if (applyPhase === 'busy') {
     kind = 'busy';
     text = t('applying');
+  } else if (resetArmed) {
+    kind = 'confirm'; // 「恢复默认」在等第二下：状态行换成确认提示
+    text = t('resetConfirmText');
   } else if (applyPhase === 'ok' || applyPhase === 'bad') {
     kind = applyPhase;
     text = applyMsg;
-  } else if (n > 0 && state.connected) {
-    kind = 'pending';
-    text = t('pendingCount', { n });
   }
+  // 有未应用的差异时不另出提示：那份差异由亮着的「应用配置」键表达（这里原来报「N 项未应用」，
+  // 用户切到另一份配置时看到「5 项未应用」，问是什么意思，随后说不需要这个提示）
   $('#applyLed').className = `led${kind === 'ok' ? ' ok' : kind === 'bad' ? ' bad' : kind === 'busy' ? ' busy' : ''}`;
   const txt = $('#applyStateText');
   txt.className = `status-text${kind === 'bad' ? ' err' : ''}`;
   // 收起时不清文字：让它跟着整块一起淡出（先清掉的话，淡出的就只剩那盏灯，文字是瞬间没的）；
-  // 藏好了再清，免得藏着的元素里留着一条已经不成立的「N 项未应用」
+  // 藏好了再清，免得藏着的元素里留着一条已经不成立的提示
   if (kind) putText(txt, text);
   txt.title = text;
   toggleShown($('#applyState'), !!kind, { afterHide: () => { txt.textContent = ''; } });
   $('#profileBar').querySelectorAll('button').forEach((b) => {
     b.disabled = state.switching;
   });
+  const reset = $('#resetBtn');
+  reset.classList.toggle('armed', resetArmed);
+  reset.disabled = state.switching;
+  reset.title = t(resetArmed ? 'resetArmedTitle' : 'resetTitle');
 }
 
 /** 写入成功后的收尾：界面此刻与鼠标一致，以此为新的基线 */
@@ -1915,6 +1979,7 @@ function finishApply(text) {
 
 async function onApply() {
   if (applying || !state.connected || pendingCount() === 0) return;
+  disarmReset();
   applying = true;
   applyPhase = 'busy';
   lastWriteAt = Date.now(); // 写入回显的配置序号要忽略（见 onProfile）
@@ -1929,6 +1994,35 @@ async function onApply() {
     applying = false;
     renderAll();
   }
+}
+
+/**
+ * 恢复默认：把当前选中的这份配置的全部参数换回默认值。只改电脑上的这份，点「应用配置」才写进鼠标；宏不动。
+ * 会被换掉的参数不少，所以要点两下：第一下只是把键点亮成红色、在状态行里说明，第二下才动手
+ */
+function onResetProfile() {
+  if (state.switching) return;
+  if (!resetArmed) {
+    resetArmed = true;
+    clearTimeout(resetTimer);
+    resetTimer = setTimeout(disarmReset, RESET_ARM_MS);
+    renderApply();
+    return;
+  }
+  disarmReset();
+  state.profiles[state.profile] = defaultProfile();
+  loadProfileData(state.profiles[state.profile]);
+  applyPhase = 'idle';
+  renderAll(); // 各页的编辑值换成默认值，「应用配置」键亮着等写入
+  saveLocalConfig();
+}
+
+/** 取消那一下等待：键恢复原样，状态行收起 */
+function disarmReset() {
+  if (!resetArmed) return;
+  resetArmed = false;
+  clearTimeout(resetTimer);
+  renderApply();
 }
 
 function buildApplyOps() {
@@ -2010,7 +2104,7 @@ async function onImportProfile() {
     const res = await window.api.importProfile();
     if (res.canceled) return;
     applyImportedProfile(res.profile);
-    renderAll(); // 导入的配置进入当前槽；与鼠标的差异由「几项未应用」指出
+    renderAll(); // 导入的配置进入当前槽；与鼠标有差异时「应用配置」键点亮
     saveLocalConfig();
     flashOk(t('configImported'));
   } catch (e) {
@@ -2018,7 +2112,7 @@ async function onImportProfile() {
   }
 }
 
-/** 用底栏的状态灯报一次性结果（绿：成功；4 秒后回到「几项未应用」） */
+/** 用底栏的状态灯报一次性结果（绿：成功；4 秒后收起） */
 function flashOk(text) {
   applyPhase = 'ok';
   applyMsg = text;
@@ -2158,15 +2252,48 @@ function loadLocalConfig() {
   }
 }
 
-function saveLocalConfig() {
-  captureProfile(); // 界面上的改动先落回当前槽，否则切配置/刷新会丢
-  localStorage.setItem('incott-config', JSON.stringify({
+function configJson() {
+  return JSON.stringify({
     profiles: state.profiles,
     profile: state.profile,
     macros: state.macros,
     currentMacro: state.currentMacro,
-  }));
+  });
 }
+
+function saveLocalConfig() {
+  captureProfile(); // 界面上的改动先落回当前槽，否则切配置会丢
+  lastSavedJson = configJson();
+  localStorage.setItem('incott-config', lastSavedJson);
+}
+
+let saveTimer = null;
+let lastSavedJson = null; // 上一次写进本地存储的内容，用来跳过没变化的保存
+
+/**
+ * 改动随手存进本地。以前只在切换配置、应用成功、导入、上传宏的时候才存，改完直接关掉软件就丢了
+ * （上游也是这样）。各页重画之后调一次：等界面安静 300ms 再写——拖推子时会连续触发；内容没变就不写
+ */
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    if (!state.profiles || state.profiles.length !== profileCount()) return; // 本地配置还没载入完
+    captureProfile();
+    const json = configJson();
+    if (json === lastSavedJson) return;
+    localStorage.setItem('incott-config', json);
+    lastSavedJson = json;
+  }, 300);
+}
+
+// 关窗口 / 退出时还有一笔没到时间的保存：立刻写
+window.addEventListener('pagehide', () => {
+  if (!saveTimer) return;
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  if (state.profiles && state.profiles.length === profileCount()) saveLocalConfig();
+});
 
 function renderAll() {
   renderTitle();

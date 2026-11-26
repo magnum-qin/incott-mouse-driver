@@ -6,9 +6,9 @@
  *        .\src-tauri\target\release\incott-mouse-driver.exe
  *   2) node design/preview/live.mjs            连接鼠标 → 逐页截图 → 打印读到的状态
  *      node design/preview/live.mjs --no-shot  只打印状态
- *      node design/preview/live.mjs --pending  加做「几项未应用」的往返测试（只改界面，不写鼠标）
+ *      node design/preview/live.mjs --pending  加做「应用配置」键的往返测试（只改界面，不写鼠标）
  *
- * 只读：只点「连接鼠标」和导航，不点「应用到鼠标」「上传到鼠标」，不往鼠标里写任何东西。
+ * 只读：只点「连接鼠标」和导航，不点「应用配置」「上传到鼠标」，不往鼠标里写任何东西。
  * 截图存到 design/shots/live-<页面>.png，并报告运行期间界面抛出的异常。
  */
 
@@ -132,7 +132,7 @@ if (!wasConnected) {
   await sleep(300);
 }
 
-// --pending：「几项未应用」的往返测试。只改界面上的值再改回去，全程不写入鼠标。
+// --pending：「应用配置」键的往返测试。只改界面上的值再改回去，全程不写入鼠标。
 if (process.argv.includes('--pending')) {
   // 等提示的淡出走完再读（收起有 110ms 退场，退场途中元素还在）
   const status = async () => {
@@ -158,7 +158,7 @@ if (process.argv.includes('--pending')) {
     cdp,
     `(() => { const k = [...document.querySelectorAll('#rateList .key')].find((el) => !el.classList.contains('lit')); return k ? k.textContent : null; })()`,
   );
-  console.log('未应用往返测试（不写入鼠标）');
+  console.log('应用键往返测试（不写入鼠标）');
   console.log('  初始           ', JSON.stringify(await status()));
   if (other) {
     await clickRate(other);

@@ -17,6 +17,18 @@ struct StoredSettings {
     start_minimized: Option<bool>,
     #[serde(default)]
     ui_scale: Option<String>,
+    /// "light" 或 "dark"；没存过就是深色
+    #[serde(default)]
+    theme: Option<String>,
+}
+
+/// 主题只有两种：只有写着 light 才是亮色，其余（没存过、写坏了）一律深色——那是界面原本的样子
+fn theme_name(stored: Option<&str>) -> &'static str {
+    if stored == Some("light") {
+        "light"
+    } else {
+        "dark"
+    }
 }
 
 fn settings_file(app: &AppHandle) -> std::path::PathBuf {
@@ -89,6 +101,7 @@ pub fn settings_get(app: AppHandle) -> serde_json::Value {
         // 兼容旧键 startMinimized
         "silentStart": s.silent_start.or(s.start_minimized).unwrap_or(false),
         "uiScale": s.ui_scale.filter(|v| !v.is_empty()).unwrap_or_else(|| "auto".into()),
+        "theme": theme_name(s.theme.as_deref()),
     })
 }
 
@@ -101,6 +114,9 @@ pub fn settings_set(app: AppHandle, patch: serde_json::Value) -> serde_json::Val
     }
     if let Some(v) = patch.get("uiScale") {
         s.ui_scale = v.as_str().map(String::from);
+    }
+    if let Some(v) = patch.get("theme").and_then(|v| v.as_str()) {
+        s.theme = Some(theme_name(Some(v)).to_string());
     }
     if let Some(v) = patch.get("autoLaunch").and_then(|v| v.as_bool()) {
         let silent = s.silent_start.or(s.start_minimized).unwrap_or(false);
@@ -198,4 +214,18 @@ pub fn notify(app: AppHandle, title: String, body: String) {
     use tauri_plugin_notification::NotificationExt;
     // 通知服务被关闭时静默失败（与上游 balloon 行为一致）
     let _ = app.notification().builder().title(title).body(body).show();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::theme_name;
+
+    #[test]
+    fn theme_is_light_only_when_it_says_so() {
+        assert_eq!(theme_name(None), "dark");
+        assert_eq!(theme_name(Some("light")), "light");
+        assert_eq!(theme_name(Some("dark")), "dark");
+        assert_eq!(theme_name(Some("")), "dark");
+        assert_eq!(theme_name(Some("Light")), "dark"); // 大小写不对也算写坏了
+    }
 }

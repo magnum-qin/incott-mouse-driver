@@ -144,10 +144,19 @@ const SCENARIOS = {
     every: 1,
     max: 20,
   },
+  'stage-hover': {
+    note: '档位条悬停：深色下面变亮，亮色下面已是白的、由投影抬起（边线和投影都在过渡里）。用 --url 指定 mode=light 看亮色',
+    steps: [{ at: 0, hover: '#dpiList .stage:nth-child(3)' }],
+    duration: 350,
+    crop: '190,120,620,180',
+    every: 1,
+    max: 16,
+  },
   xy: {
-    note: 'XY 分离：每行变高，下面的行滑下去',
-    steps: [{ at: 0, click: '#xySplit' }],
-    duration: 450,
+    note: 'XY 分离：每行展开第二条轴（行高、序号键、下面的行连续过渡），再拨回去收起。会改本地配置，只在预览里跑',
+    previewOnly: true, // 拨这个开关会存进本地配置（同配置键：会污染用户正在编辑的那一份）
+    steps: [{ at: 0, click: '#xySplit' }, { at: 700, click: '#xySplit' }],
+    duration: 1250,
     crop: '180,70,640,560',
   },
   'stage-remove': {
@@ -180,7 +189,7 @@ const SCENARIOS = {
     max: 20,
   },
   apply: {
-    note: '有修改后：未应用指示出现，应用键点亮',
+    note: '有修改后：应用键点亮（从熄灭到点亮的那一下键面闪一下）',
     query: 'tab=performance',
     steps: [{ at: 0, click: '#rateList .key:nth-child(4)' }],
     duration: 450,
@@ -190,11 +199,27 @@ const SCENARIOS = {
   },
   'apply-done': {
     previewOnly: true, // 会真的把整套配置写进鼠标
-    note: '换配置后点「应用到鼠标」：按钮点亮 → 写入 → 熄灭，未应用指示消失，绿数字移到新配置上（模拟设备）',
+    note: '换配置后点「应用配置」：按钮点亮 → 写入 → 熄灭，绿数字移到新配置上（模拟设备）',
     steps: [{ at: 0, click: '#profileBar [data-profile="2"]' }, { at: 600, click: '#applyBtn' }],
     duration: 14000, // 模拟设备按真实时序逐条写入，整套要十来秒
     every: 24,
     max: 24,
+  },
+  theme: {
+    previewOnly: true, // 会改掉模拟设置里的主题（真机上是 settings.json）
+    note: '切换亮色主题：和切换语言一样，整窗快速亮一下，颜色跟着换过去',
+    steps: [{ at: 0, click: '#settingsBtn' }, { at: 400, click: '#setLightTheme' }],
+    duration: 1500,
+    every: 10,
+    max: 12,
+  },
+  reset: {
+    previewOnly: true, // 会把当前这份配置在本地存储里换成默认值
+    note: '恢复默认：第一下键面转红、状态行换成确认提示；第二下才把各页换成默认值',
+    steps: [{ at: 0, click: '#rateList .key:nth-child(4)' }, { at: 500, click: '#resetBtn' }, { at: 1700, click: '#resetBtn' }],
+    duration: 2900,
+    every: 30,
+    max: 12,
   },
   'button-type': {
     note: '按键映射换类型：灯转移，下拉换成新选项后淡入',

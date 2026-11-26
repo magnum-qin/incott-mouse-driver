@@ -121,6 +121,7 @@ async function boot() {
   bridge.onTrayStatus(render);
   // 每次弹出播放一次淡入（窗口常驻，隐藏再从左上角"跳"出来会显得生硬）
   bridge.onPopoverShown(() => {
+    window.applyMirroredTheme(); // 这个窗口常驻内存，期间主界面可能换过主题
     document.body.classList.remove('pv-in');
     void document.body.offsetWidth; // 强制重排，让动画能重复触发
     document.body.classList.add('pv-in');

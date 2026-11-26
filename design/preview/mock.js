@@ -24,15 +24,24 @@
  *   click=<选择器>        切页后点一下某个元素，可重复
  *   status=ok:文字|err:文字   底栏状态文字
  *   scale=auto|1|1.1|…    界面缩放
- *   mode=light|dark       明暗（默认跟随系统）
+ *   mode=light|dark       明暗，也就是设置里「亮色主题」的初值（默认深色）
  */
 (function () {
   const q = new URLSearchParams(location.search);
   const param = (k, d) => (q.has(k) ? q.get(k) : d);
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  document.documentElement.dataset.mode =
-    param('mode', '') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  // 明暗：界面自己有「亮色主题」这个设置，默认深色；页面里的 theme-init.js 已经照上次的镜像摆过一次。
+  // mode=light|dark 用来在预览里直接指定（它同时是模拟设置里的初值）
+  if (param('mode', '')) document.documentElement.dataset.mode = param('mode', '');
+  else if (!document.documentElement.dataset.mode) document.documentElement.dataset.mode = 'dark';
+  // 模拟的设置（真机上是 settings.json）
+  const settings = {
+    autoLaunch: true,
+    silentStart: false,
+    uiScale: param('scale', 'auto'),
+    theme: document.documentElement.dataset.mode === 'light' ? 'light' : 'dark',
+  };
 
   // 上一次的电量：真实应用里由桥接层记在 localStorage（ui/bridge/core.js 的 rememberBattery），
   // 这里在它启动之前放好，免得每张截图都带着上一张留下的
@@ -197,8 +206,8 @@
       case 'hid_send_feature': last = args.bytes.slice(1); applyWrite(last); return null;
       case 'hid_get_feature': return [9, ...(opened ? answer(last) : [0, 0, 0, 0, 0, 0, 0, 0])];
       case 'hid_write_output': return null;
-      case 'settings_get': return { autoLaunch: true, silentStart: false, uiScale: param('scale', 'auto') };
-      case 'settings_set': return { autoLaunch: !!args.patch?.autoLaunch, silentStart: !!args.patch?.silentStart, uiScale: args.patch?.uiScale || 'auto' };
+      case 'settings_get': return { ...settings };
+      case 'settings_set': Object.assign(settings, args.patch || {}); return { ...settings };
       case 'get_app_info': return { version: '1.0.1', homepage: 'https://github.com/magnum-qin/incott-mouse-driver' };
       case 'tray_get_status': return TRAY_STATUS();
       case 'tray_refresh': emit('tray://status', TRAY_STATUS()); return null;
