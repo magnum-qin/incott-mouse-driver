@@ -212,7 +212,7 @@
       case 'hid_write_output': return null;
       case 'settings_get': return { ...settings };
       case 'settings_set': Object.assign(settings, args.patch || {}); return { ...settings };
-      case 'get_app_info': return { version: '1.0.2', homepage: 'https://github.com/magnum-qin/incott-mouse-driver' };
+      case 'get_app_info': return { version: '1.0.3', homepage: 'https://github.com/magnum-qin/incott-mouse-driver' };
       case 'tray_get_status': return TRAY_STATUS();
       case 'tray_refresh': emit('tray://status', TRAY_STATUS()); return null;
       default: return null; // tray_set_* / notify / show_about / export_file / import_file / open_url…
