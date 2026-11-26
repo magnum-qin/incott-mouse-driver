@@ -715,6 +715,10 @@ input:disabled + .tog { opacity: .4; border-color: var(--border-strong); }
 /* 鼠标线稿：灯点的颜色跟当前档位，换档时颜色渐变过去 */
 .mouse-shadow { fill: #000; opacity: var(--art-shadow); }
 .mouse-outline { fill: none; stroke: var(--art-outline); stroke-width: 1.1; }
+/* 按型号换上来的线稿（用户提供的外轮廓，见 shared/mouse-art.js）：描边粗细按屏幕像素算——几张画布的大小不一样，线却要一样粗 */
+.art-mouse .mouse-outline {
+  stroke-width: 1.4px; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round;
+}
 .mouse-seamL, .mouse-seamR { fill: none; stroke: var(--art-seam); stroke-width: 1.1; }
 .mouse-wheel { fill: none; stroke: var(--art-wheel); stroke-width: 1.1; }
 .mouse-led { fill: var(--art-led); stroke: transparent; transition: fill var(--t-base) var(--ease-state); }

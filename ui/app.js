@@ -53,6 +53,7 @@ let resetTimer = null;
 const RESET_ARM_MS = 6000; // 等第二下的时间，过了就当作取消
 
 import { applyTheme } from './shared/theme.js';
+import { mouseArtFor, artLayout } from './shared/mouse-art.js';
 
 const $ = (sel) => document.querySelector(sel);
 const t = (key, vars) => window.i18n.t(key, vars);
@@ -872,6 +873,7 @@ async function connectFlow() {
  */
 function applyModelInfo(info, clampRate = true) {
   state.modelInfo = info || null;
+  if (info) setMouseArt(info.modelCode);
   if (info && state.constants) {
     state.maxDpi = info.sensor === state.constants.sensors.PAW3950.id
       ? state.constants.sensors.PAW3950.maxDpi
@@ -882,6 +884,34 @@ function applyModelInfo(info, clampRate = true) {
   }
   // 非 8K 接收器时高回报率不可选，当前值超限则回落
   if (clampRate && info && !info.is8KReceiver && state.rate > 1000) state.rate = 1000;
+}
+
+/** 建 SVG 元素（h() 建的是 HTML 元素，这里要带命名空间） */
+function svgEl(tag, attrs) {
+  const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, String(v));
+  return node;
+}
+
+/**
+ * 读数屏里的线稿换成这个型号的（用户提供的那几张，见 shared/mouse-art.js）：
+ * 一条轮廓 + 一颗档位色的小灯 + 底下的影子。用的还是通用那张的类名，颜色、过渡、连上时的亮都跟着样式表走。
+ * 型号没有对应的线稿就不动，界面留着原来那张通用的；同一个型号不重画（灯的过渡、换档时亮一下都在这个元素上）
+ */
+function setMouseArt(modelCode) {
+  const art = mouseArtFor(modelCode);
+  const box = $('#screenArt');
+  if (!art || !box || box.dataset.art === String(modelCode)) return;
+  const { led, shadow } = artLayout(art);
+  const svg = svgEl('svg', { viewBox: art.viewBox });
+  svg.classList.add('art-mouse');
+  svg.append(
+    svgEl('ellipse', { class: 'mouse-shadow', cx: shadow.cx, cy: shadow.cy, rx: shadow.rx, ry: shadow.ry }),
+    svgEl('path', { class: 'mouse-outline', d: art.d }),
+    svgEl('circle', { class: 'mouse-led', cx: led.cx, cy: led.cy, r: led.r }),
+  );
+  box.replaceChildren(svg);
+  box.dataset.art = String(modelCode);
 }
 
 /** 断开后回到「未连接」：没有基线了，也就没有未应用的修改 */

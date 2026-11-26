@@ -19,6 +19,8 @@
  *                         让设备和鼠标来去：在页面里调 window.__mock.insertDongle()（接收器插上来）、
  *                         plugWired()（鼠标插上线）、unplugWired()（拔线）、pullDongle()（拔掉接收器）
  *   macro=0..10           让前 n 个宏槽位带内容
+ *   model=1|2|3|6|8|9|14  型号代码（默认 3 = G24 系列），读数屏里的线稿跟着换；认不出的代码（如 model=99）用通用那张
+ *   sensor=240|241        型号信息里的传感器字节（默认 241 = PAW3950；240 是 PAW3395，型号就显示成原版 G24）
  *   debug                 左上角显示日志（步骤、横向溢出的元素）
  *   push=0..5             连接后模拟鼠标上报「切到第 n 档」（像按了 DPI 键）
  *   click=<选择器>        切页后点一下某个元素，可重复
@@ -63,9 +65,9 @@
   const present = { dongle: ONLINE, wired: param('wired', '0') === '1' };
   const online = () => present.dongle || present.wired; // 现在有没有可以连的接口
   const D = {
-    modelCode: 3, // G24
+    modelCode: Number(param('model', '3')), // 型号代码（model=1|2|3|6|8|9|14，同 protocol.js 的 MODEL_TABLE）
     receiverType: 2, // 8K 接收器
-    sensorByte: 241, // PAW3950
+    sensorByte: Number(param('sensor', '241')), // 传感器字节（sensor=240 是 PAW3395，也就是原版 G24）
     levels: 6,
     current: 1,
     dpi: [400, 800, 1600, 2400, 3200, 6400],
@@ -171,11 +173,13 @@
     return Promise.resolve(() => listeners.get(name).delete(fn));
   };
 
+  // 托盘里的型号名：和 protocol.js 的 modelName 同一个规则（这里不能 import，照抄一份）
+  const MODEL_NAMES = { 1: 'Ghero', 2: 'G23', 3: 'G24', 6: 'G29', 8: 'G23V2', 9: 'FM23', 14: 'G23V2' };
   const TRAY_STATUS = () => {
     const on = online();
     return {
       connected: on,
-      name: on ? 'G24 Pro' : null, // 真机上来自 0x8F：G24 系列 + PAW3950
+      name: on ? (D.modelCode === 3 && D.sensorByte === 241 ? 'G24 Pro' : MODEL_NAMES[D.modelCode] || null) : null, // 真机上来自 0x8F：G24 系列 + PAW3950 是 G24 Pro
       link: on ? (onWired() ? 'wired' : '8k') : null, // 连接方式代码，浮层按语言拼成「8K」/「有线」
       wireless: on && !onWired(),
       battery: on ? D.battery : null,
