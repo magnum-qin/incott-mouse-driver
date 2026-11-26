@@ -1,0 +1,9 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+<defs><clipPath id="incottframedmouse-clip"><rect width="1024" height="1024" rx="224"/></clipPath></defs>
+<g clip-path="url(#incottframedmouse-clip)"><rect width="1024" height="1024" fill="#232327"/>
+<rect x="133" y="133" width="758" height="758" rx="170" fill="#EDEDEE"/>
+<rect x="165" y="165" width="694" height="694" rx="138" fill="#232327"/>
+<path d="M512 251 C620.8 251 709 319.79 709 404.66 L709 690.26 C709 735.95 620.8 773 512 773 C403.2 773 315 735.95 315 690.26 L315 404.66 C315 319.79 403.2 251 512 251 Z" fill="#EDEDEE"/>
+<rect x="488.5" y="288.9" width="47" height="170.9" rx="23.5" fill="#232327"/>
+<circle cx="512" cy="622.5" r="56.9" fill="#46C98C"/></g>
+</svg>

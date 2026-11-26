@@ -1,7 +1,7 @@
 //! 托盘系统 —— 对应上游 main/index.js 的托盘部分 + main/tray-popover.js。
 //!
-//!  - 托盘图标 = 应用图标那只鼠标（按托盘的实际尺寸现画），用指示灯表示状态：
-//!    未连接 = 灯灭，连接后按电量三段变色（>60 绿 / 25~60 黄 / ≤25 红）
+//!  - 托盘图标 = 一个只描边的圆角方框，里面一只单色鼠标（按托盘的实际尺寸现画，墨色跟随系统主题）：
+//!    未连接 = 鼠标变灰（灯灭），连接后鼠标实心、灯按电量三段变色（>60 绿 / 25~60 黄 / ≤25 红）
 //!  - 单击：200ms 延时后弹出信息浮层（再单击收起）；双击：打开主窗口
 //!    （Windows 双击序列会先送 click，残尾 click 用时间窗吞掉，避免"弹两下"）
 //!  - 浮层贴托盘图标定位：任务栏在下半屏时显示在图标上方，否则下方
@@ -23,6 +23,7 @@ const REOPEN_GUARD: Duration = Duration::from_millis(260); // 失焦收起后不
 const BLUR_ARM_DELAY: Duration = Duration::from_millis(180); // 刚显示时的失焦不算
 const SHOW_MAIN_GUARD: Duration = Duration::from_millis(300); // 双击重复派发去重
 const EDGE_GAP: f64 = 8.0; // 与托盘图标/屏幕边缘的间距
+const DIMMED: f32 = 0.5; // 没连接时托盘图标里鼠标的不透明度
 
 // ── 状态 ───────────────────────────────────────────────────
 #[derive(Clone, Default, Deserialize)]
@@ -64,72 +65,90 @@ pub struct TrayState {
 }
 
 // ── 图标 ───────────────────────────────────────────────────
-/// 一只鼠标的各部分在画布里的比例，单位是画布边长
-#[derive(Clone, Copy)]
-struct Shape {
-    rx: f32,          // 鼠标半宽
-    top: f32,         // 顶边到中心
-    bottom: f32,      // 底边到中心
-    dome: f32,        // 顶部圆拱的高
-    bottom_dome: f32, // 底部收圆的高
-    groove_hw: f32,   // 分键槽半宽
-    groove_end: f32,  // 分键槽底端到中心
-    lamp_r: f32,      // 指示灯半径
-    lamp_cy: f32,     // 指示灯中心
-    radius: f32,      // 底板圆角
-    tile: [u8; 3],    // 底板
-    body: [u8; 3],    // 鼠标
+/// 托盘图标的用色。图标中间不填色、直接画在任务栏上，所以墨色跟着任务栏的主题走：
+/// 浅色任务栏用深墨，灯色压暗一档才看得清；深色任务栏用浅墨，灯色就是界面里的那三种
+struct Palette {
+    ink: [u8; 3],
+    green: [u8; 3],
+    yellow: [u8; 3],
+    red: [u8; 3],
 }
 
-/// 图标挨着一排别的应用图标时（任务栏、托盘），分量来自反差和占比。大图缩到二十来个像素，
-/// 鼠标只剩细细一条，看着比旁边的小一圈——所以小尺寸用这套加粗的比例：底板更黑，鼠标更宽、纯白。
-/// design/icon/small-frames.mjs 里有一份同样的实现，给应用图标出小尺寸帧；改这里要同步
-const BOLD: Shape = Shape {
-    rx: 0.37, // 鼠标宽 74%
-    top: 0.35,
-    bottom: 0.35,
-    dome: 0.27,
-    bottom_dome: 0.19,
-    groove_hw: 0.05,
-    groove_end: -0.10,
-    lamp_r: 0.12,
-    lamp_cy: 0.10,
-    radius: 0.22,
-    tile: [0x11, 0x11, 0x13],
-    body: [0xff, 0xff, 0xff],
+const LIGHT_TASKBAR: Palette = Palette {
+    ink: [0x1b, 0x1b, 0x1e],
+    green: [0x16, 0x96, 0x68],
+    yellow: [0xbe, 0x7e, 0x16],
+    red: [0xd2, 0x40, 0x46],
 };
 
-/// 应用图标大图的比例，尺寸大了就回到这个修长的样子
-const REGULAR: Shape = Shape {
-    rx: 0.215, // 鼠标宽 43%
-    top: 0.354,
-    bottom: 0.355,
-    dome: 0.244,
-    bottom_dome: 0.172,
-    groove_hw: 0.033,
-    groove_end: -0.113,
-    lamp_r: 0.043,
-    lamp_cy: 0.107,
-    radius: 0.22,
-    tile: [0x23, 0x23, 0x27],
-    body: [0xed, 0xed, 0xee],
+const DARK_TASKBAR: Palette = Palette {
+    ink: [0xed, 0xed, 0xee],    // 界面的 --text
+    green: [0x46, 0xc9, 0x8c],  // --success
+    yellow: [0xf0, 0xb3, 0x4c], // --warning
+    red: [0xf0, 0x58, 0x5d],    // --danger
 };
 
-/// 各个边长下取多少 BOLD（1 = 全按 BOLD，0 = 大图的比例），节点之间线性过渡
-const BOLD_SHARE: [(u32, f32); 4] = [(24, 1.0), (32, 0.55), (48, 0.4), (64, 0.0)];
+/// 任务栏是浅色还是深色：读系统的「Windows 模式」（任务栏和开始菜单跟着它走，和「应用模式」可以不一样）。
+/// 读不到（旧系统）按浅色算——那是 Windows 的默认值
+#[cfg(windows)]
+fn taskbar_is_light() -> bool {
+    #[link(name = "advapi32")]
+    extern "system" {
+        fn RegGetValueW(
+            key: *mut std::ffi::c_void,
+            sub_key: *const u16,
+            value: *const u16,
+            flags: u32,
+            kind: *mut u32,
+            data: *mut std::ffi::c_void,
+            size: *mut u32,
+        ) -> i32;
+    }
+    const HKEY_CURRENT_USER: *mut std::ffi::c_void = 0x8000_0001usize as *mut std::ffi::c_void;
+    const RRF_RT_REG_DWORD: u32 = 0x10;
+    let sub_key: Vec<u16> = "Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize\0"
+        .encode_utf16()
+        .collect();
+    let value: Vec<u16> = "SystemUsesLightTheme\0".encode_utf16().collect();
+    let mut data = 0u32;
+    let mut size = 4u32;
+    let rc = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            sub_key.as_ptr(),
+            value.as_ptr(),
+            RRF_RT_REG_DWORD,
+            std::ptr::null_mut(),
+            &mut data as *mut u32 as *mut std::ffi::c_void,
+            &mut size,
+        )
+    };
+    rc != 0 || data != 0
+}
 
-const LAMP_OFF: [u8; 3] = [0x3a, 0x3a, 0x40]; // 灯灭时是白色鼠标上的一个深色灯座
+#[cfg(not(windows))]
+fn taskbar_is_light() -> bool {
+    false
+}
 
-/// 托盘图标里那盏灯的颜色，含义和主界面一致：没连接 = 灯灭；连上之后按电量分三段。
+fn palette() -> &'static Palette {
+    if taskbar_is_light() {
+        &LIGHT_TASKBAR
+    } else {
+        &DARK_TASKBAR
+    }
+}
+
+/// 托盘图标里那盏灯：没连接 = 灯灭（鼠标也画成半透明的）；连上之后按电量分三段。
 /// 电量还没读到时给绿灯——那是「已连接」灯（同标题栏），不当成未连接
-fn lamp_for(connected: bool, battery: Option<u8>) -> [u8; 3] {
+fn lamp_for(connected: bool, battery: Option<u8>, pal: &Palette) -> Option<[u8; 3]> {
     if !connected {
-        LAMP_OFF
+        None
     } else {
         match battery {
-            Some(b) if b > 25 && b <= 60 => [0xf0, 0xb3, 0x4c], // 黄（--warning）
-            Some(b) if b <= 25 => [0xf0, 0x58, 0x5d],           // 红（--danger）
-            _ => [0x46, 0xc9, 0x8c],                            // 绿（--success）
+            Some(b) if b > 25 && b <= 60 => Some(pal.yellow),
+            Some(b) if b <= 25 => Some(pal.red),
+            _ => Some(pal.green),
         }
     }
 }
@@ -198,75 +217,58 @@ fn coverage(distance: f32) -> f32 {
     (0.5 - distance).clamp(0.0, 1.0)
 }
 
-/// 边长 size 的图标取多少 BOLD，节点之间线性过渡，两端之外取端点
-fn bold_share(size: u32) -> f32 {
-    let s = size as f32;
-    let (mut x0, mut y0) = BOLD_SHARE[0];
-    if s <= x0 as f32 {
-        return y0;
-    }
-    for &(x1, y1) in BOLD_SHARE.iter().skip(1) {
-        if s <= x1 as f32 {
-            return y0 + (y1 - y0) * (s - x0 as f32) / (x1 - x0) as f32;
+/// 把 `src`（不透明度 s）叠在 `dst`（不透明度 d）上面，返回合成后的颜色和不透明度
+fn over(dst: [f32; 3], d: f32, src: [f32; 3], s: f32) -> ([f32; 3], f32) {
+    let a = s + d * (1.0 - s);
+    let rgb = std::array::from_fn(|k| {
+        if a > 0.0 {
+            (src[k] as f32 * s + dst[k] as f32 * d * (1.0 - s)) / a
+        } else {
+            0.0
         }
-        (x0, y0) = (x1, y1);
-    }
-    y0
+    });
+    (rgb, a)
 }
 
-fn blend(t: f32) -> Shape {
-    let m = |a: f32, b: f32| a * t + b * (1.0 - t);
-    let c =
-        |a: [u8; 3], b: [u8; 3]| std::array::from_fn(|k| m(a[k] as f32, b[k] as f32).round() as u8);
-    Shape {
-        rx: m(BOLD.rx, REGULAR.rx),
-        top: m(BOLD.top, REGULAR.top),
-        bottom: m(BOLD.bottom, REGULAR.bottom),
-        dome: m(BOLD.dome, REGULAR.dome),
-        bottom_dome: m(BOLD.bottom_dome, REGULAR.bottom_dome),
-        groove_hw: m(BOLD.groove_hw, REGULAR.groove_hw),
-        groove_end: m(BOLD.groove_end, REGULAR.groove_end),
-        lamp_r: m(BOLD.lamp_r, REGULAR.lamp_r),
-        lamp_cy: m(BOLD.lamp_cy, REGULAR.lamp_cy),
-        radius: m(BOLD.radius, REGULAR.radius),
-        tile: c(BOLD.tile, REGULAR.tile),
-        body: c(BOLD.body, REGULAR.body),
-    }
-}
-
-/// 托盘图标：和应用图标是同一只鼠标（同一套按尺寸加粗的比例），灯的颜色表示状态。
+/// 托盘图标：一个只描边的圆角方框，里面一只单色鼠标，直接画在任务栏上。
 ///
-/// 不把大图缩下来，而是按托盘的实际尺寸现画：小尺寸用加粗的比例，尺寸越大越接近大图的修长比例。
-/// 各部分用有向距离描述，逐像素算覆盖率再合成；窄于 1.5px 的细节在小尺寸下会被抗锯齿抹掉，给了下限
-fn tray_icon(lamp: [u8; 3], size: u32) -> tauri::image::Image<'static> {
-    let sh = blend(bold_share(size));
-    let s = size as f32;
-    let half = s / 2.0;
-    // 鼠标：顶部圆拱，中间直边，底部收圆
-    let rx = sh.rx * s;
-    let top = -sh.top * s;
-    let dome = sh.dome * s;
-    let bottom_dome = sh.bottom_dome * s;
+///  - 连接着：鼠标实心，分键槽留空透出任务栏，身体里一枚灯，颜色 = 电量
+///  - 没连接：鼠标只剩一半不透明度（看起来是灰的），没有灯
+///
+/// 框占满整个图标位，外轮廓于是和旁边那些方形图标一样大。鼠标本身是竖长的，不加框的话再怎么加宽
+/// 也只有它们的七成宽（被说成「小」「胖」「瘦」的三版见 design/README.md「托盘图标」）；框中间不填色，
+/// 分量才不会回到第一版那种实心底板。没连接不画空心：这么小的鼠标挖空以后，加上分键线和灯座，远看是个感叹号。
+/// 各部分用有向距离描述，逐像素算覆盖率，再按图层自下而上合成
+fn tray_glyph(lamp: Option<[u8; 3]>, pal: &Palette, size: u32) -> tauri::image::Image<'static> {
+    // 比例以「16 逻辑像素的图标位」为单位：150% 缩放下边长 24 像素，1 个单位 = 1.5 像素
+    let u = size as f32 / 16.0;
+    let half = size as f32 / 2.0;
+    // 框：外沿就是图标位的边，圆角量的是旁边那个方形图标（150% 下 5.4 像素，逐行对得上）。
+    // 线宽按 4/3 个单位取整到整像素（100% 下 1 像素、150% 下 2 像素）：里外两个沿都落在像素边界上，线才是实的
+    let frame_stroke = ((4.0 * u / 3.0).round() as i32).max(1) as f32;
+    // 鼠标：顶部圆拱，中间直边，底部收圆。宽 8、高 10⅔ 个单位（150% 下 12×16 像素，宽高比和上一版一样），
+    // 离框上下 2 像素、左右 4 像素
+    let rx = 4.0 * u;
+    let body_h = 32.0 * u / 3.0;
+    let top = -body_h / 2.0;
+    let dome = 0.78 * rx;
+    let bottom_dome = 0.42 * rx;
     let dome_cy = top + dome;
-    let bottom_cy = sh.bottom * s - bottom_dome;
-    // 分键槽：从顶边通下来
-    let groove_hw = (sh.groove_hw * s).max(0.75);
-    let groove_top = top - 1.0;
-    let groove_end = sh.groove_end * s;
+    let bottom_cy = body_h / 2.0 - bottom_dome;
+    // 分键线：离顶边一点，通到 40% 的高度（通到顶的话会和上面的框连成一条线）
+    let seam_w = u;
+    let seam_top = top + 0.8 * u;
+    let seam_end = top + 0.4 * body_h;
     // 指示灯
-    let lamp_r = (sh.lamp_r * s).max(1.6);
-    let lamp_cy = sh.lamp_cy * s;
-    let radius = sh.radius * s; // 底板圆角
+    let lamp_r = 1.2 * u;
+    let lamp_cy = 7.0 * u / 3.0;
 
+    let ink = [pal.ink[0] as f32, pal.ink[1] as f32, pal.ink[2] as f32];
     let mut rgba = vec![0u8; (size * size * 4) as usize];
     for y in 0..size {
         for x in 0..size {
             let px = x as f32 + 0.5 - half;
             let py = y as f32 + 0.5 - half;
-            let tile = coverage(sd_round_box(px, py, half, half, radius));
-            if tile <= 0.0 {
-                continue;
-            }
             let body = sd_ellipse(px, py - dome_cy, rx, dome)
                 .min(sd_ellipse(px, py - bottom_cy, rx, bottom_dome))
                 .min(sd_round_box(
@@ -276,38 +278,65 @@ fn tray_icon(lamp: [u8; 3], size: u32) -> tauri::image::Image<'static> {
                     (bottom_cy - dome_cy) / 2.0,
                     0.0,
                 ));
-            let body = coverage(body);
-            let groove = coverage(sd_round_box(
+            let seam = coverage(sd_round_box(
                 px,
-                py - (groove_top + groove_end) / 2.0,
-                groove_hw,
-                (groove_end - groove_top) / 2.0,
-                groove_hw,
-            )) * body;
-            let lit = coverage(px.hypot(py - lamp_cy) - lamp_r) * body;
-            // 自下而上合成：底板 → 鼠标 → 分键槽（底色）→ 指示灯。槽和灯不重叠
-            let plain = body - groove - lit;
+                py - (seam_top + seam_end) / 2.0,
+                seam_w / 2.0,
+                (seam_end - seam_top) / 2.0,
+                seam_w / 2.0,
+            ));
+            // 框 = 落在外沿之内的覆盖率 − 落在内沿之内的覆盖率
+            // （两个 coverage 的次序不能反：反过来算出来是负的，框会整个消失）
+            let frame_d = sd_round_box(
+                px,
+                py,
+                half - frame_stroke / 2.0,
+                half - frame_stroke / 2.0,
+                3.6 * u - frame_stroke / 2.0,
+            );
+            let frame = (coverage(frame_d - frame_stroke / 2.0)
+                - coverage(frame_d + frame_stroke / 2.0))
+                .max(0.0);
+            let mouse = coverage(body) * (1.0 - seam);
+            let lamp_a = coverage(px.hypot(py - lamp_cy) - lamp_r);
+            let (colour, mouse, lamp_a) = match lamp {
+                Some(c) => ([c[0] as f32, c[1] as f32, c[2] as f32], mouse, lamp_a),
+                None => (ink, mouse * DIMMED, 0.0),
+            };
+            // 图层自下而上：鼠标 → 灯 → 框
+            let (rgb, a) = [(ink, mouse), (colour, lamp_a), (ink, frame)]
+                .into_iter()
+                .filter(|(_, s)| *s > 0.0)
+                .fold(([0.0f32; 3], 0.0f32), |(dst, d), (src, s)| {
+                    over(dst, d, src, s)
+                });
             let i = ((y * size + x) * 4) as usize;
             for k in 0..3 {
-                let v = sh.tile[k] as f32 * (1.0 - body)
-                    + sh.body[k] as f32 * plain
-                    + sh.tile[k] as f32 * groove
-                    + lamp[k] as f32 * lit;
-                rgba[i + k] = v.round() as u8;
+                rgba[i + k] = rgb[k].round() as u8;
             }
-            rgba[i + 3] = (tile * 255.0).round() as u8;
+            rgba[i + 3] = (a.clamp(0.0, 1.0) * 255.0).round() as u8;
         }
     }
     tauri::image::Image::new_owned(rgba, size, size)
 }
 
-/// 按当前的连接 / 电量状态重画托盘图标
+/// 按当前的连接 / 电量状态（和任务栏的主题）重画托盘图标
 fn refresh_tray_icon(st: &TrayState) {
-    let lamp = lamp_for(*st.connected.lock().unwrap(), *st.battery.lock().unwrap());
-    let icon = tray_icon(lamp, tray_icon_size());
+    let pal = palette();
+    let lamp = lamp_for(
+        *st.connected.lock().unwrap(),
+        *st.battery.lock().unwrap(),
+        pal,
+    );
+    let icon = tray_glyph(lamp, pal, tray_icon_size());
     if let Some(tray) = st.tray.lock().unwrap().clone() {
         let _ = tray.set_icon(Some(icon));
     }
+}
+
+/// 系统主题变了（浅色 ↔ 深色）：托盘图标的墨色跟着换
+pub fn theme_changed(app: &AppHandle) {
+    refresh_tray_icon(&app.state::<TrayState>());
 }
 
 // ── 菜单 ───────────────────────────────────────────────────
@@ -548,7 +577,7 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     };
 
     let tray = TrayIconBuilder::with_id("main-tray")
-        .icon(tray_icon(lamp_for(false, None), tray_icon_size()))
+        .icon(tray_glyph(None, palette(), tray_icon_size()))
         .tooltip("Incott Mouse Driver")
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -656,4 +685,145 @@ pub fn tray_hide_popover(app: AppHandle) {
 pub fn tray_open_main(app: AppHandle) {
     hide_popover(&app);
     show_main(&app);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pixel(img: &tauri::image::Image<'_>, x: u32, y: u32) -> [u8; 4] {
+        let rgba = img.rgba();
+        let i = ((y * img.width() + x) * 4) as usize;
+        [rgba[i], rgba[i + 1], rgba[i + 2], rgba[i + 3]]
+    }
+
+    fn solid(a: [u8; 4], rgb: [u8; 3], what: &str) {
+        for k in 0..3 {
+            assert!(a[k].abs_diff(rgb[k]) <= 1, "{what}：{a:?} 不是 {rgb:?}");
+        }
+        assert_eq!(a[3], 255, "{what}：{a:?} 应该完全不透明");
+    }
+
+    fn clear(a: [u8; 4], what: &str) {
+        assert_eq!(a[3], 0, "{what}：{a:?} 应该是透明的");
+    }
+
+    /// 不透明度过半的像素组成的外框（宽、高）
+    fn bounds(img: &tauri::image::Image<'_>) -> (u32, u32) {
+        let (mut x0, mut x1, mut y0, mut y1) = (u32::MAX, 0, u32::MAX, 0);
+        for (i, p) in img.rgba().chunks_exact(4).enumerate() {
+            if p[3] < 128 {
+                continue;
+            }
+            let w = img.width() as usize;
+            let (x, y) = ((i % w) as u32, (i / w) as u32);
+            x0 = x0.min(x);
+            x1 = x1.max(x);
+            y0 = y0.min(y);
+            y1 = y1.max(y);
+        }
+        (x1 - x0 + 1, y1 - y0 + 1)
+    }
+
+    /// 墨量：不透明度的总和
+    fn ink_of(img: &tauri::image::Image<'_>) -> f32 {
+        img.rgba().chunks_exact(4).map(|p| p[3] as f32 / 255.0).sum()
+    }
+
+    #[test]
+    fn lamp_follows_connection_and_battery() {
+        let pal = &LIGHT_TASKBAR;
+        assert_eq!(lamp_for(false, Some(80), pal), None);
+        assert_eq!(lamp_for(true, None, pal), Some(pal.green)); // 连上了但电量还没读到
+        assert_eq!(lamp_for(true, Some(94), pal), Some(pal.green));
+        assert_eq!(lamp_for(true, Some(60), pal), Some(pal.yellow));
+        assert_eq!(lamp_for(true, Some(26), pal), Some(pal.yellow));
+        assert_eq!(lamp_for(true, Some(25), pal), Some(pal.red));
+        assert_eq!(lamp_for(true, Some(0), pal), Some(pal.red));
+    }
+
+    #[test]
+    fn connected_is_a_solid_mouse_inside_an_outline_frame() {
+        // 150% 缩放：24 像素，1 个单位 = 1.5 像素。框占满 24×24、线宽 2 像素；鼠标 12×16 像素；灯在中心偏下 3.5 像素处
+        let img = tray_glyph(Some(LIGHT_TASKBAR.green), &LIGHT_TASKBAR, 24);
+        let ink = LIGHT_TASKBAR.ink;
+        clear(pixel(&img, 0, 0), "框的圆角之外");
+        clear(pixel(&img, 23, 23), "框的圆角之外");
+        clear(pixel(&img, 12, 2), "框和鼠标之间"); // 框里不填色
+        clear(pixel(&img, 2, 12), "框和鼠标之间");
+        solid(pixel(&img, 12, 0), ink, "框的上边");
+        solid(pixel(&img, 0, 12), ink, "框的左边");
+        solid(pixel(&img, 23, 12), ink, "框的右边");
+        solid(pixel(&img, 12, 23), ink, "框的下边");
+        solid(pixel(&img, 12, 12), ink, "鼠身");
+        solid(pixel(&img, 10, 8), ink, "分键线旁边的鼠身");
+        solid(pixel(&img, 12, 15), LIGHT_TASKBAR.green, "指示灯");
+        let seam = pixel(&img, 12, 7);
+        assert!(seam[3] < 80, "分键线应该留空透出任务栏：{seam:?}");
+    }
+
+    #[test]
+    fn disconnected_is_a_dimmed_mouse_and_no_lamp() {
+        let img = tray_glyph(None, &LIGHT_TASKBAR, 24);
+        let ink = LIGHT_TASKBAR.ink;
+        solid(pixel(&img, 12, 0), ink, "框不变");
+        solid(pixel(&img, 0, 12), ink, "框不变");
+        let body = pixel(&img, 12, 12);
+        for k in 0..3 {
+            assert!(body[k].abs_diff(ink[k]) <= 1, "鼠身：{body:?} 不是 {ink:?}");
+        }
+        assert_eq!(body[3], 128, "鼠身应该是一半不透明");
+        assert_eq!(pixel(&img, 12, 15), body, "灯不亮：灯的位置和鼠身一样");
+    }
+
+    #[test]
+    fn ink_follows_the_taskbar_theme() {
+        let dark = tray_glyph(Some(DARK_TASKBAR.green), &DARK_TASKBAR, 24);
+        solid(pixel(&dark, 12, 0), DARK_TASKBAR.ink, "深色任务栏上的框");
+        solid(pixel(&dark, 12, 12), DARK_TASKBAR.ink, "深色任务栏上的鼠身");
+        solid(pixel(&dark, 12, 15), DARK_TASKBAR.green, "深色任务栏上的灯");
+    }
+
+    #[test]
+    fn glyph_matches_the_neighbouring_icons_in_size() {
+        // 量的是真实托盘里的邻居：它们占满 24×24 像素，单色的那几个墨量（相对任务栏底色的暗度加起来）197~405。
+        // 这里的墨量是不透明度加起来，在代码输出上量：连着时 328、没连接时 245；第四版连着时是 293。
+        // 鼠标是竖长的，不加框再宽也只有 16×22（用户说太瘦），所以外轮廓由框来撑，占满整个图标位
+        let on = tray_glyph(Some(LIGHT_TASKBAR.green), &LIGHT_TASKBAR, 24);
+        assert_eq!(bounds(&on), (24, 24), "外框（像素）");
+        let ink = ink_of(&on);
+        assert!(
+            ink > 300.0 && ink < 360.0,
+            "墨量 {ink:.0} 应该和第四版（293）相近：连着时是 328"
+        );
+        // 没连接时鼠标变灰，分量轻一截，外轮廓不变
+        let off = tray_glyph(None, &LIGHT_TASKBAR, 24);
+        assert_eq!(bounds(&off), (24, 24), "外框（像素）");
+        assert!(
+            ink_of(&off) < ink - 60.0,
+            "没连接的墨量 {} 不应该和连着的时候差不多",
+            ink_of(&off)
+        );
+    }
+
+    #[test]
+    fn glyph_is_drawn_at_every_tray_size() {
+        for size in [16u32, 20, 24, 28, 32] {
+            let img = tray_glyph(Some(LIGHT_TASKBAR.green), &LIGHT_TASKBAR, size);
+            let opaque = img.rgba().chunks_exact(4).filter(|p| p[3] == 255).count();
+            assert!(
+                opaque > (size * size / 4) as usize,
+                "{size} 像素下实心的像素太少：{opaque}"
+            );
+            assert_eq!(bounds(&img), (size, size), "{size} 像素下框应该占满图标位");
+            // 灯在正中偏下（中心 + 3.5 像素，按 150% 折算）
+            let c = size / 2;
+            let lamp_y = c + (3.5 * size as f32 / 24.0).round() as u32;
+            solid(
+                pixel(&img, c, lamp_y),
+                LIGHT_TASKBAR.green,
+                &format!("{size} 像素下的指示灯"),
+            );
+        }
+    }
 }

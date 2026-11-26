@@ -1,0 +1,142 @@
+{
+  "name": "IncottFramedMouse",
+  "target_platforms": [
+    "Windows"
+  ],
+  "source_reference": "design brief only: the app's own design language (ui/style.css tokens) and the app's tray icon, which is drawn in code (src-tauri/src/tray.rs). No logo, no bitmap reference.",
+  "brief": "A framed key: graphite stage; inside it the tray icon's own mark — a white outline square frame with a slim solid white mouse and one green connected-lamp dot.",
+  "semantic_review": {
+    "status": "exact-enough",
+    "identity_risk": "low",
+    "basis": "original concept authored in-task from the app's own design language; no external brand mark and no bitmap reference to reproduce",
+    "route": "semantic-svg",
+    "notes": "The outline frame is the mark itself (the same frame the tray icon draws directly on the taskbar), not a decorative rim: it carries the square outline so the mouse can stay slim at every size. Frame, mouse and lamp are filled shapes; the hollow of the frame and the notch are background-coloured overlays (no boolean cutout, no stroke)."
+  },
+  "app_context": {
+    "app_name": "Incott Mouse Driver",
+    "category": "desktop hardware configuration tool (mouse driver)",
+    "job_to_be_done": "let the user recognise the mouse driver in the taskbar, Start menu and installer at a glance",
+    "tone": "calm, precise, hardware-instrument; no AI-flavoured purple, glow or gradients"
+  },
+  "style_direction": "custom direction from the app UI (单色仪表台); nearest built-in family: black-stage-mark",
+  "source_analysis": {
+    "fidelity_target": "the tray icon's composition (outline frame + slim mouse + lamp) on the app's graphite; proportions in frame units, frame edge = 24: stroke 2, mouse 12 × 16, notch 1.5 wide starting 1.2 below the top, lamp r 1.8 centred 3.5 below the middle",
+    "identity_risk": "low",
+    "route": "semantic-svg",
+    "must_preserve": [
+      "outline square frame as the main mark: 74% of the canvas, corner radius 22.5% of the frame",
+      "single continuous mouse silhouette inside the frame: elliptical dome, straight sides, elliptical bottom, half the frame wide",
+      "notch as a closed background-coloured slot from near the top to 40% of the mouse height",
+      "one green lamp dot on the lower body"
+    ],
+    "must_not_add": [
+      "stroke",
+      "glow or shadow",
+      "gradient",
+      "text",
+      "rounded platform mask inside layers"
+    ],
+    "components": [
+      {
+        "id": "frame",
+        "layer": "frame",
+        "format": "svg",
+        "spec_constraints": [
+          "filled rounded square, no stroke"
+        ]
+      },
+      {
+        "id": "frame inner",
+        "layer": "frame inner",
+        "format": "svg",
+        "spec_constraints": [
+          "background-coloured rounded square inset by the stroke width: leaves a hollow frame, no cutout"
+        ]
+      },
+      {
+        "id": "mouse-body",
+        "layer": "mouse body",
+        "format": "svg",
+        "spec_constraints": [
+          "single clean filled path",
+          "no stroke"
+        ]
+      },
+      {
+        "id": "notch",
+        "layer": "notch",
+        "format": "svg",
+        "spec_constraints": [
+          "rounded rect overlay in background colour",
+          "no mask, no cutout"
+        ]
+      },
+      {
+        "id": "lamp",
+        "layer": "lamp",
+        "format": "svg",
+        "spec_constraints": [
+          "single circle",
+          "flat colour"
+        ]
+      }
+    ],
+    "acceptance_checks": [
+      "preview and app PNG inspected at full size and 64px",
+      "no svg_material_warnings"
+    ]
+  },
+  "fill": {
+    "solid": "extended-srgb: 0.137 0.137 0.153 1"
+  },
+  "rgb": "#232327",
+  "layers": [
+    {
+      "name": "background",
+      "svg": "<rect width=\"1024\" height=\"1024\" fill=\"#232327\"/>",
+      "composer": {
+        "include": false
+      }
+    },
+    {
+      "name": "frame",
+      "svg": "<rect x=\"133\" y=\"133\" width=\"758\" height=\"758\" rx=\"170\" fill=\"#EDEDEE\"/>",
+      "composer": {
+        "format": "svg",
+        "reason": "the outline frame is the main mark; a filled rounded square keeps it editable"
+      }
+    },
+    {
+      "name": "frame inner",
+      "svg": "<rect x=\"165\" y=\"165\" width=\"694\" height=\"694\" rx=\"138\" fill=\"#232327\"/>",
+      "composer": {
+        "format": "svg",
+        "reason": "background-coloured overlay inset by the 32 px stroke: hollows the frame without a cutout"
+      }
+    },
+    {
+      "name": "mouse body",
+      "svg": "<path d=\"M512 251 C620.8 251 709 319.79 709 404.66 L709 690.26 C709 735.95 620.8 773 512 773 C403.2 773 315 735.95 315 690.26 L315 404.66 C315 319.79 403.2 251 512 251 Z\" fill=\"#EDEDEE\"/>",
+      "composer": {
+        "format": "svg",
+        "reason": "same slim silhouette as the tray icon; stays editable as one flat path"
+      }
+    },
+    {
+      "name": "notch",
+      "svg": "<rect x=\"488.5\" y=\"288.9\" width=\"47\" height=\"170.9\" rx=\"23.5\" fill=\"#232327\"/>",
+      "composer": {
+        "format": "svg",
+        "reason": "background-coloured overlay: the button notch, closed at the top so it does not run into the frame"
+      }
+    },
+    {
+      "name": "lamp",
+      "svg": "<circle cx=\"512\" cy=\"622.5\" r=\"56.9\" fill=\"#46C98C\"/>",
+      "composer": {
+        "format": "svg",
+        "reason": "the one meaningful accent: connected lamp"
+      }
+    }
+  ]
+}

@@ -51,6 +51,8 @@ fn main() {
         ])
         .setup(|app| {
             tray::init(app.handle())?;
+            // 鼠标插线 / 拔线、接收器插拔时，连接跟着鼠标走
+            hid::watch_devices(app.handle().clone());
 
             // 只有开机自启（注册表 Run 带 --background）才静默挂托盘；
             // 手动运行 exe 总是弹窗（窗口在配置里 visible:false，这里再显示，避免闪白）
@@ -88,6 +90,8 @@ fn main() {
                         );
                     }
                 }
+                // 系统主题切换（浅色 ↔ 深色）：托盘图标的墨色跟着换
+                tauri::WindowEvent::ThemeChanged(_) => tray::theme_changed(window.app_handle()),
                 _ => {}
             }
         })

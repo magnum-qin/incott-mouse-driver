@@ -7,6 +7,7 @@
 //!    读循环用 read_timeout(5ms) 穿插命令处理 → 与 node-hid 的串行语义一致
 //!    （上游 withIo 队列存在的原因：feature report 读写共用通道，并发会互相顶掉响应）
 //!  - 输入报文推送 → `hid://data` 事件；断连 → `hid://error` 事件
+//!  - 监视：后台线程定期重新枚举，匹配的接口有增减就发 `hid://devices` 事件（连接跟着鼠标走）
 //!
 //! 字节布局（与上游一致）：
 //!  - Feature Report：report ID 9 + 8 字节数据区；get 返回含 reportId 首字节
@@ -59,16 +60,19 @@ fn is_wireless_device(pid: u16, product: &str) -> bool {
     name.contains("wireless") || name.contains("无线")
 }
 
+/// VID 0x093A + vendor-defined 接口（usagePage 0xFF05、usage 1），不限 PID（多型号兼容）
+fn is_config_interface(d: &hidapi::DeviceInfo) -> bool {
+    d.vendor_id() == protocol_const::VID
+        && d.usage_page() == protocol_const::USAGE_PAGE
+        && d.usage() == protocol_const::USAGE
+}
+
 /// 枚举匹配的 Incott 配置接口（在 Tauri 线程池里同步执行）
 fn enumerate() -> Result<Vec<DeviceEntry>, String> {
     let api = HidApi::new().map_err(|e| format!("hidapi init: {e}"))?;
     Ok(api
         .device_list()
-        .filter(|d| {
-            d.vendor_id() == protocol_const::VID
-                && d.usage_page() == protocol_const::USAGE_PAGE
-                && d.usage() == protocol_const::USAGE
-        })
+        .filter(|d| is_config_interface(d))
         .map(|d| DeviceEntry {
             vendor_id: d.vendor_id(),
             product_id: d.product_id(),
@@ -82,6 +86,39 @@ fn enumerate() -> Result<Vec<DeviceEntry>, String> {
             ),
         })
         .collect())
+}
+
+/// 多久重新枚举一次。实测（G24 Pro + 8K 接收器都插着的机器上）一次约 20ms
+const WATCH_INTERVAL: Duration = Duration::from_secs(2);
+
+/// 后台盯着匹配的接口有没有增减（鼠标插线 / 拔线、接收器插拔）：集合变了就发 `hid://devices`。
+/// 要不要换设备、往哪边换由 JS 决定（ui/bridge/core.js 的 reconcile）
+pub fn watch_devices(app: AppHandle) {
+    std::thread::Builder::new()
+        .name("hid-devices".into())
+        .spawn(move || {
+            let Ok(mut api) = HidApi::new() else {
+                return;
+            };
+            let mut last: Option<Vec<String>> = None;
+            loop {
+                std::thread::sleep(WATCH_INTERVAL);
+                if api.refresh_devices().is_err() {
+                    continue;
+                }
+                let now: Vec<String> = api
+                    .device_list()
+                    .filter(|d| is_config_interface(d))
+                    .map(|d| d.path().to_string_lossy().into_owned())
+                    .collect();
+                if last.as_ref() == Some(&now) {
+                    continue;
+                }
+                last = Some(now);
+                let _ = app.emit("hid://devices", ());
+            }
+        })
+        .ok();
 }
 
 /// IO 线程主体：串行处理命令 + 轮询输入报文

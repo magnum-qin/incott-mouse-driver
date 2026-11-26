@@ -5,6 +5,8 @@
  *   node design/preview/motion.mjs --list                 列出全部场景
  *   node design/preview/motion.mjs page                   录一个场景
  *   node design/preview/motion.mjs --all                  全部场景各录一遍（改了界面后的回归）
+ *                                                             默认每个场景各用一个目录；--all 时别再指定 --out，
+ *                                                             否则所有场景挤在一个目录里互相覆盖帧
  *   node design/preview/motion.mjs page --crop 0,60,300,200 --every 1   只看某块区域，逐帧
  *   node design/preview/motion.mjs page stage --attach 9333 --out design/shots/motion/live
  *                                                             录「正在运行的真实应用」而不是预览页（见下）
@@ -238,13 +240,45 @@ const SCENARIOS = {
     duration: 450,
   },
   connect: {
-    previewOnly: true, // 会连接设备
-    note: '连接过程：转圈出现又收起、型号和电量展开、读数屏填上',
-    query: 'auto=0',
-    steps: [{ at: 0, click: '#connectBtn' }],
-    duration: 3600,
+    previewOnly: true, // 往预览里注入「接收器出现」的设备事件
+    note: '没连上时设备出现 → 自动连接：转圈出现又收起、型号和电量展开、读数屏填上',
+    query: 'state=off',
+    steps: [{ at: 0, js: 'window.__mock.insertDongle()' }],
+    duration: 4600,
     crop: '440,0,640,300',
     every: 6,
+    max: 24,
+  },
+  'dongle-return': {
+    previewOnly: true, // 模拟接收器拔了又插
+    note: '接收器被拔（回到未连接）→ 插回来后不用点按钮，自动重新连上',
+    steps: [{ at: 0, js: 'window.__mock.pullDongle()' }, { at: 2000, js: 'window.__mock.insertDongle()' }],
+    duration: 6600,
+    crop: '440,0,640,300',
+    every: 8,
+    max: 24,
+  },
+  'manual-connect': {
+    previewOnly: true, // 会点「断开」和「连接鼠标」，并模拟接收器拔插
+    note: '手动断开之后不再自动连：接收器拔了又插回来也不连，点了「连接鼠标」才连',
+    steps: [
+      { at: 0, click: '#connectBtn' },
+      { at: 600, js: 'window.__mock.pullDongle()' },
+      { at: 1500, js: 'window.__mock.insertDongle()' },
+      { at: 3600, click: '#connectBtn' },
+    ],
+    duration: 7600,
+    crop: '440,0,640,300',
+    every: 8,
+    max: 24,
+  },
+  'mouse-wake': {
+    previewOnly: true, // 模拟休眠中的鼠标醒来
+    note: '休眠中的鼠标醒来：补读配置，回报率按键和读数屏换成鼠标上的值（500 Hz）',
+    query: 'asleep=1&tab=performance',
+    steps: [{ at: 0, js: 'window.__mock.wake()' }],
+    duration: 2800,
+    every: 8,
     max: 24,
   },
   disconnect: {
@@ -256,20 +290,40 @@ const SCENARIOS = {
     every: 1,
     max: 24,
   },
+  'plug-wired': {
+    previewOnly: true, // 往预览里注入「鼠标插上线」的设备事件
+    note: '连着接收器时鼠标插上线：连接自动换到有线，标题栏换成「有线」、电量刷新',
+    steps: [{ at: 0, js: 'window.__mock.plugWired()' }],
+    duration: 3600,
+    crop: '440,0,640,300',
+    every: 6,
+    max: 24,
+  },
+  'unplug-wired': {
+    previewOnly: true, // 往预览里注入「拔线」的设备事件
+    query: 'wired=1',
+    note: '拔线：连接自动回到接收器，标题栏换回「8K」',
+    steps: [{ at: 0, js: 'window.__mock.unplugWired()' }],
+    duration: 3600,
+    crop: '440,0,640,300',
+    every: 6,
+    max: 24,
+  },
+  'pull-dongle': {
+    previewOnly: true, // 往预览里注入「拔掉接收器」的设备事件
+    note: '拔掉接收器：回到「鼠标已断开」',
+    steps: [{ at: 0, js: 'window.__mock.pullDongle()' }],
+    duration: 1400,
+    crop: '440,0,640,300',
+    every: 3,
+    max: 24,
+  },
   lang: {
     note: '切换语言：整窗快速亮一下',
     steps: [{ at: 0, click: '#langBtn' }, { at: 350, click: '.lang-option[data-lang="en"]' }],
     duration: 750,
     every: 2,
     max: 20,
-  },
-  toast: {
-    previewOnly: true, // 会向设备读电量
-    note: '通知条：进场 → 停留 → 退场',
-    steps: [{ at: 0, click: '#battery' }],
-    duration: 2800,
-    every: 30,
-    max: 24,
   },
 };
 
@@ -595,9 +649,18 @@ async function record(name, spec) {
 let failed = 0;
 for (const name of list) {
   try {
-    const r = await record(name, SCENARIOS[name]);
+    let r = await record(name, SCENARIOS[name]);
+    // 偶尔会一帧都没送到（全量跑的时候见过一次，单独重跑正常，原因没查到）：重录一次再下结论
+    if (r.frames === 0) {
+      console.log(`${name.padEnd(15)} 一帧都没录到，重录一次`);
+      r = await record(name, SCENARIOS[name]);
+    }
     console.log(`${name.padEnd(15)} ${String(r.frames).padStart(3)} 帧 / ${String(r.span).padStart(4)}ms  ${r.strip}`);
-    if (r.errors.length) {
+    if (r.frames === 0) {
+      // 一帧都没有 = 这个场景什么都没验证到（动作没带来画面变化，或者几个场景挤在同一个输出目录里互相覆盖）
+      failed++;
+      console.log(`${''.padEnd(15)} ✗ 一帧都没录到：动作没有带来任何画面变化，或者几个场景共用了同一个 --out 目录`);
+    } else if (r.errors.length) {
       failed++;
       console.log(`${''.padEnd(15)} ⚠ 页面抛了 ${r.errors.length} 个未捕获异常:`);
       for (const e of r.errors) console.log(`${''.padEnd(17)}${e}`);

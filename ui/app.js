@@ -18,6 +18,7 @@ const state = {
   modelInfo: null, // 0x8F 型号信息 { model, modelCode, is8KReceiver, sensor }
   battery: null,
   batteryCharging: false,
+  batteryRemembered: false, // 电量不是刚读到的，是上一次知道的（无线时等鼠标上报）
   constants: null,
   maxDpi: 32000,
   dpiLevels: [], // [{ x, y, color }]
@@ -327,15 +328,34 @@ function toggleSettingsMenu() {
   else closeMenu($('#settingsMenu'));
 }
 
-/** 更新设置项（开机自启 / 静默启动），成功 / 失败都弹提示 */
-async function onSettingChange(patch, labelKey, enabled) {
+/**
+ * 保存一项设置（开机自启 / 静默启动 / 界面缩放）。开关自己翻过去就是反馈，不另弹提示；
+ * 存不进去才在这一行下面标出来，并把控件退回到实际保存着的值（revert）
+ */
+async function saveSetting(input, patch, revert) {
+  clearSettingError(input);
   try {
     await window.api.setSettings(patch);
-    showToast(t(enabled ? 'settingEnabled' : 'settingDisabled', { n: t(labelKey) }));
   } catch (_) {
-    showToast(t('settingSaveFailed'));
+    revert();
+    showSettingError(input, t('settingSaveFailed'));
   }
   syncSilentAvailability();
+}
+
+/** 这一行设置的说明文字换成错误信息（红字），直到下一次保存 */
+function showSettingError(input, message) {
+  const desc = input.closest('.settings-item')?.querySelector('.settings-desc');
+  if (!desc) return;
+  desc.textContent = message;
+  desc.classList.add('bad');
+}
+
+function clearSettingError(input) {
+  const desc = input.closest('.settings-item')?.querySelector('.settings-desc');
+  if (!desc || !desc.classList.contains('bad')) return;
+  desc.textContent = t(desc.dataset.i18n);
+  desc.classList.remove('bad');
 }
 
 /** 静默启动只在开机自启开启时才有意义，未开自启时置灰 */
@@ -359,8 +379,10 @@ function resolveUiScale(pref) {
 }
 
 let uiScale = 1; // 当前生效的界面缩放倍率
+let uiScalePref = 'auto'; // 设置里的缩放偏好：auto / 1 / 1.1 / 1.25 / 1.5
 
 function applyUiScale(pref) {
+  uiScalePref = pref; // 设置里保存着的缩放偏好（auto / 1 / 1.1 / …）
   uiScale = resolveUiScale(pref);
   document.documentElement.style.setProperty('--ui-scale', String(uiScale));
   syncCompactLayout();
@@ -422,6 +444,7 @@ async function init() {
   renderAll();
   refreshDeviceState();
   addEventListener('resize', syncCompactLayout);
+  autoConnect(); // 进了软件就自己检测鼠标并连上（有线还是无线由桥接层判断）
 }
 
 /** 侧栏底部：版本号（兼「关于」入口）+ 仓库链接 */
@@ -554,17 +577,14 @@ function bindEvents() {
   });
   $('#settingsBtn').addEventListener('click', toggleSettingsMenu);
   $('#setAutoLaunch').addEventListener('change', (e) =>
-    onSettingChange({ autoLaunch: e.target.checked }, 'settingsAutoLaunch', e.target.checked));
+    saveSetting(e.target, { autoLaunch: e.target.checked }, () => { e.target.checked = !e.target.checked; }));
   $('#setSilentStart').addEventListener('change', (e) =>
-    onSettingChange({ silentStart: e.target.checked }, 'settingsSilentStart', e.target.checked));
-  // 界面缩放：立即生效并落盘
-  $('#setUiScale').addEventListener('change', async (e) => {
+    saveSetting(e.target, { silentStart: e.target.checked }, () => { e.target.checked = !e.target.checked; }));
+  // 界面缩放：立即生效并落盘；存不回去就缩回原样
+  $('#setUiScale').addEventListener('change', (e) => {
+    const before = uiScalePref;
     applyUiScale(e.target.value);
-    try {
-      await window.api.setSettings({ uiScale: e.target.value });
-    } catch (_) {
-      showToast(t('settingSaveFailed'));
-    }
+    saveSetting(e.target, { uiScale: e.target.value }, () => { e.target.value = before; applyUiScale(before); });
   });
   // 点击别处收起菜单
   document.addEventListener('click', (e) => {
@@ -624,18 +644,32 @@ function bindEvents() {
   window.api.onBattery(({ level, charging }) => {
     state.battery = level;
     state.batteryCharging = charging;
+    state.batteryRemembered = false; // 鼠标报了：这是当下的
     renderTitle();
   });
-  window.api.onToast((msg) => showToast(msg));
+  // 断开：标题栏那句话变红、灯灭，就是提示（不再弹通知条）
   window.api.onDisconnected(() => {
     if (!state.connected) return;
     resetDevice();
     setDeviceLabel(t('deviceDisconnected'), true);
-    showToast(t('deviceDisconnected'));
   });
   // 鼠标主动上报的状态变化（DPI 键切换档位等）：没有待应用的修改时，界面跟着鼠标走
   if (window.api.onStatus) {
     window.api.onStatus(onDeviceStatus);
+  }
+  // 没连上的时候设备出现了（比如接收器插回来）：自动连。用户点过「断开」的话桥接层不会发这个信号
+  if (window.api.onDeviceArrived) {
+    window.api.onDeviceArrived(() => autoConnect());
+  }
+  // 鼠标在接收器和线缆之间移动：桥接层已经把连接换好，界面跟着换型号信息和连接方式
+  if (window.api.onDeviceChanged) {
+    window.api.onDeviceChanged(async ({ reason, state: st }) => {
+      if (!state.connected || !st.opened) return;
+      state.isWireless = st.isWireless;
+      applyModelInfo(st.modelInfo, false);
+      await refreshBattery(); // 新连接上的电量（有线时读命令就带电量）
+      renderAll(); // 标题栏的「有线 / 8K」和读数屏自己会变，不再弹通知条
+    });
   }
 
   // DPI 页
@@ -711,6 +745,9 @@ function bindEvents() {
 }
 
 // ── 连接 ──────────────────────────────────────────────────
+let connecting = false; // 连接流程进行中：启动时的自动连接和「设备出现了」可能前后脚到，只走一遍
+let configPending = false; // 连上了但设备没应答（休眠中）：它一上报就补读一遍配置
+
 async function onConnect() {
   if (state.connected) {
     await window.api.closeDevice();
@@ -718,6 +755,34 @@ async function onConnect() {
     setDeviceLabel(t('notConnected'));
     return;
   }
+  if (connecting) return;
+  connecting = true;
+  try {
+    await connectFlow();
+  } finally {
+    connecting = false;
+  }
+}
+
+/**
+ * 自动连接：刚进软件时，以及还没连上的时候设备出现了（比如接收器插回来）。
+ * 和点「连接鼠标」走同一条流程；没有鼠标就安静地停在「未连接设备」，不报错。
+ * 用户点过「断开」之后桥接层不会再发「设备出现了」，所以不会违背他的意思又连回去
+ */
+async function autoConnect() {
+  if (state.connected || connecting) return;
+  let list;
+  try {
+    list = await window.api.listDevices();
+  } catch (_) {
+    return; // 枚举失败：等下一次设备变化
+  }
+  if (list.length === 0) return;
+  await onConnect();
+}
+
+/** 连接流程本体：转圈 → 搜索 → 连接 → 读配置 → 以此为基线（没有未应用的修改） */
+async function connectFlow() {
   showSpinner();
   setDeviceLabel(t('searching'));
   try {
@@ -728,7 +793,8 @@ async function onConnect() {
       return;
     }
     setDeviceLabel(t('connecting'));
-    // 不传 path：让桥接层自动选可通信的 Col02 接口（插线时存在 Col01/Col02 两个接口）
+    // 不传 path：让桥接层自动选可通信的 Col02 接口（插线时存在 Col01/Col02 两个接口）；
+    // 有线和接收器都在时也是它挑——枚举靠后的先试，于是连到有线
     const st = await window.api.openDevice();
     state.connected = st.opened;
     state.isWireless = st.isWireless;
@@ -737,8 +803,10 @@ async function onConnect() {
     renderAll();
 
     // 一次性读回整套配置（配置序号 / DPI 档位 / 回报率 / LOD / 按键 / 节能时间）
+    let snap = null;
     try {
-      applyDeviceSnapshot(await window.api.readConfig());
+      snap = await window.api.readConfig();
+      applyDeviceSnapshot(snap);
     } catch (e) {
       // 老固件不支持整套读取时退回逐条读（DPI 档位数）
       try {
@@ -748,14 +816,16 @@ async function onConnect() {
         /* 读档位失败不阻塞连接 */
       }
     }
+    // 设备没应答（多半是无线鼠标在休眠，一进软件就自动连时会碰到）：读回来的是空快照，
+    // 界面此刻显示的是本地保存的值。等它第一次上报（说明醒了）再补读，见 onDeviceStatus
+    configPending = !(snap && snap.answered);
     // 界面此刻与鼠标对齐：以此为基线，没有未应用的修改
     baseline = snapshotOf();
     // 读电量不阻塞连接：G24 Pro + 8K 接收器上这条命令回显正确但电量字节恒为 0（2026-11-23 实测，
     // 见 docs/protocol.md §4），读不到就算了，电量由设备的主动上报送来（onBattery）；
-    // 支持这条命令的机型则立刻能读到
+    // 支持这条命令的机型（含有线）则立刻能读到
     refreshBattery();
     setDeviceLabel(t('connected'));
-    hideToast(); // 清掉可能残留的「已断开」提示
     hideSpinner();
     renderAll();
   } catch (e) {
@@ -764,8 +834,12 @@ async function onConnect() {
   }
 }
 
-/** 应用 0x8F 型号信息：决定 DPI 上限（按传感器）与回报率可选范围（按 8K 接收器） */
-function applyModelInfo(info) {
+/**
+ * 应用 0x8F 型号信息：决定 DPI 上限（按传感器）与回报率可选范围（按 8K 接收器）。
+ * clampRate：非 8K 时把超范围的回报率落回 1000。连接自动切换（鼠标插线 / 拔线）时传 false——
+ * 用户还没应用的修改不能因此被抹掉，鼠标当前的回报率随后由状态推送带过来
+ */
+function applyModelInfo(info, clampRate = true) {
   state.modelInfo = info || null;
   if (info && state.constants) {
     state.maxDpi = info.sensor === state.constants.sensors.PAW3950.id
@@ -776,7 +850,7 @@ function applyModelInfo(info) {
     state.maxDpi = state.constants.sensors.PAW3950.maxDpi;
   }
   // 非 8K 接收器时高回报率不可选，当前值超限则回落
-  if (info && !info.is8KReceiver && state.rate > 1000) state.rate = 1000;
+  if (clampRate && info && !info.is8KReceiver && state.rate > 1000) state.rate = 1000;
 }
 
 /** 断开后回到「未连接」：没有基线了，也就没有未应用的修改 */
@@ -785,7 +859,9 @@ function resetDevice() {
   state.modelInfo = null;
   state.battery = null;
   state.batteryCharging = false;
+  state.batteryRemembered = false;
   baseline = null;
+  configPending = false;
   renderAll();
 }
 
@@ -828,6 +904,13 @@ function setDeviceLabel(text, isErr = false) {
  */
 function onDeviceStatus(s) {
   if (!state.connected || !baseline) return;
+  if (configPending) {
+    // 连上时设备没应答（休眠中），现在它上报了、说明醒了：补读一遍配置，界面以鼠标为准。
+    // 用户这期间改过东西的话就不去动他改的
+    configPending = false;
+    if (pendingCount() === 0 && !applying) syncFromDevice();
+    return;
+  }
   let changed = false;
   if (s.rate != null && s.rate !== baseline.rate) {
     const hadEdit = state.rate !== baseline.rate;
@@ -844,7 +927,38 @@ function onDeviceStatus(s) {
   if (changed) renderAll();
 }
 
+/**
+ * 设备醒着的时候重新读一遍配置，界面以鼠标为准（只在用户没有未应用的修改时才会被调用）。
+ * 读的过程中用户改了东西、或者开始应用了，读回来的就作废——不动他的
+ */
+async function syncFromDevice() {
+  if (!state.connected) return;
+  try {
+    const snap = await window.api.readConfig();
+    if (!state.connected || applying || pendingCount() !== 0) return;
+    applyDeviceSnapshot(snap);
+    baseline = snapshotOf();
+    renderAll();
+  } catch (_) {
+    /* 读失败：保持现状 */
+  }
+}
+
 // ── 标题栏 / 读数屏 ───────────────────────────────────────
+/** 传感器名（标题栏用） */
+const sensorNameOf = (info) => (info.sensor === state.constants.sensors.PAW3950.id ? 'PAW3950' : 'PAW3395');
+
+/**
+ * 连接方式标签：8K 接收器 → '8K'，有线 → 「有线」，别的接收器不标。
+ * 鼠标插上线充电时，标题栏和读数屏从这里看出连接换了路
+ */
+function linkTag() {
+  const info = state.modelInfo;
+  if (!info) return '';
+  if (info.is8KReceiver) return '8K';
+  return state.isWireless ? '' : t('linkWired');
+}
+
 /** 标题栏的连接状态与电量（连接状态文字由连接流程自己写，这里只管灯、型号、电量） */
 function renderTitle() {
   const info = state.modelInfo;
@@ -853,9 +967,7 @@ function renderTitle() {
   const model = $('#deviceInfo');
   toggleShown(model, known, TITLE_BAR);
   if (known) {
-    const C = state.constants;
-    const sensorName = info.sensor === C.sensors.PAW3950.id ? 'PAW3950' : 'PAW3395';
-    putText(model, `${info.name || info.model} · ${sensorName}${info.is8KReceiver ? ' · 8K' : ''}`);
+    putText(model, `${info.name || info.model} · ${sensorNameOf(info)}${linkTag() ? ` · ${linkTag()}` : ''}`);
   }
   $('#connectBtn').textContent = state.connected ? t('disconnect') : t('connect');
 
@@ -867,8 +979,11 @@ function renderTitle() {
     putText($('#batteryVal'), lv);
     batt.classList.toggle('mid', !state.batteryCharging && lv <= 60 && lv > 25);
     batt.classList.toggle('low', !state.batteryCharging && lv <= 25);
-    batt.style.setProperty('--fill', `${clamp(lv, 0, 100)}%`);
-    batt.title = `${t('batteryLabel')} ${lv}%${state.batteryCharging ? ` · ${t('chargingTag')}` : ''}`;
+    batt.style.setProperty('--lvl', String(clamp(lv, 0, 100) / 100));
+    const notes = [];
+    if (state.batteryCharging) notes.push(t('chargingTag'));
+    if (state.batteryRemembered) notes.push(t('batteryWaiting'));
+    batt.title = `${t('batteryLabel')} ${lv}%${notes.length ? ` · ${notes.join(' · ')}` : ''}`;
   }
   renderScreen();
 }
@@ -895,7 +1010,7 @@ function renderScreen() {
   $('#screenLed').className = `led round ${on ? 'ok' : 'off'}`;
   const info = state.modelInfo;
   putText($('#screenName'), on && info
-    ? [info.name || info.model, info.is8KReceiver ? '8K' : ''].filter(Boolean).join(' · ')
+    ? [info.name || info.model, linkTag()].filter(Boolean).join(' · ')
     : '—');
 
   const idx = on ? clamp(baseline.currentDpi, 0, baseline.dpiValues.length - 1) : -1;
@@ -929,47 +1044,19 @@ function startBatteryAutoRefresh() {
 async function refreshBattery() {
   if (!state.connected) return;
   try {
-    const val = await window.api.read('battery'); // { level, charging }
+    const val = await window.api.read('battery'); // { level, charging, remembered }
     state.battery = val.level;
     state.batteryCharging = val.charging;
+    state.batteryRemembered = !!val.remembered;
     renderTitle();
   } catch (_) {
     /* 读电量失败静默（保留上次值） */
   }
 }
 
-/** 点击电量图标：刷新并弹提示（电量 + 充电状态） */
+/** 点击电量图标：读一次电量。不弹提示——数字就在图标旁边，提示条只会挡住底栏 */
 async function onBatteryClick() {
   await refreshBattery();
-  if (state.battery != null) {
-    const charging = state.batteryCharging ? ` · ${t('chargingTag')}⚡` : '';
-    showToast(`${t('batteryLabel')} ${state.battery}%${charging}`);
-  }
-}
-
-// ── Toast ──────────────────────────────────────────────────
-let toastTimer = null;
-let toastHideTimer = null;
-
-function showToast(msg) {
-  const el = $('#toast');
-  if (!el) return;
-  el.textContent = msg;
-  el.classList.remove('hidden');
-  void el.offsetWidth; // 强制重排，保证 display:none → 显示时过渡生效
-  el.classList.add('show');
-  clearTimeout(toastTimer);
-  clearTimeout(toastHideTimer);
-  toastTimer = setTimeout(hideToast, 2000); // 2 秒后自动消失
-}
-
-function hideToast() {
-  const el = $('#toast');
-  if (!el) return;
-  clearTimeout(toastTimer);
-  el.classList.remove('show');
-  clearTimeout(toastHideTimer);
-  toastHideTimer = setTimeout(() => el.classList.add('hidden'), 160);
 }
 
 // ── DPI：档位通道条 ───────────────────────────────────────

@@ -1,20 +1,23 @@
 /**
- * 应用图标的小尺寸帧 + 托盘图标的离线预览。零依赖，Node 18+。
+ * 应用图标的小尺寸帧。零依赖，Node 18+。
  *
- * 图标挨着一排别的应用图标时（任务栏、托盘），分量来自反差和占比。把 1024 的大图直接缩到二十来个像素，
- * 鼠标只剩细细一条，看着比旁边的小一圈。所以小尺寸单独画，并且越小越粗：
+ * 应用图标和托盘图标是同一个构成：一个只描边的圆角方框，里面一只单色鼠标、一枚绿灯。
+ * 应用图标多一块底板（要放在浅色、深色各种背景上），框和鼠标画成白的；托盘图标不带底板、墨色跟随主题，
+ * 在 src-tauri/src/tray.rs 里现画。
  *
- *   BOLD       二十来个像素以下的比例：底板更黑，鼠标更宽、纯白
- *   REGULAR    大图的比例：修长
- *   BOLD_SHARE 各个边长下取多少 BOLD，节点之间线性过渡
+ * 以前小尺寸另有一套「越小越粗」的比例（24 像素下鼠标宽到画面的 74%）：那时图标的外轮廓靠鼠标自己撑，
+ * 鼠标一细就显小。2026-11-26 用户看了安装包的图标，说「还是胖胖的鼠标图标」。现在外轮廓由框撑着，
+ * 鼠标在哪个尺寸都保持托盘图标里的细长比例，不用再加粗。
  *
- * icon.ico 里 16 / 24 / 32 / 48 四帧是这里画的；64 / 256 两帧仍然是大图缩出来的（npx tauri icon）。
- * 托盘图标（src-tauri/src/tray.rs 的 tray_icon）用的是同一套东西，只换灯的颜色——所以托盘图标
- * 在任何缩放下都等于应用图标同尺寸的那一帧。两边的参数由 test/icon.test.js 核对，改一边要同步另一边。
+ * 比例记在 MASTER 里，就是大图（design/icon/IncottFramedMouse，画布 1024）里的像素数，小尺寸帧照着缩。
+ * 只有线宽不是等比缩放的：16 像素下线要 1 像素才看得见，图越大在比例上越细——
+ * 16 像素下 1 像素，64 像素下 3 像素，256 像素（大图缩出来的）是 8 像素。
+ *
+ * icon.ico 里 16 / 24 / 32 / 48 / 64 五帧是这里画的；256 那一帧是大图缩出来的（npx tauri icon）。
  *
  *   node design/icon/small-frames.mjs                 # 把小尺寸帧写回 src-tauri/icons/icon.ico
  *   node design/icon/small-frames.mjs --check         # 只核对，不一致时退出码 1（npm test 也跑）
- *   node design/icon/small-frames.mjs --sheet 图.png   # 放大 6 倍的预览：托盘四种灯色 + ico 里的各帧
+ *   node design/icon/small-frames.mjs --sheet 图.png   # 放大预览 ico 里的各帧（浅色、深色底各一份）
  *
  * 跑过 `npx tauri icon` 之后要再跑一遍本脚本：那一步会用大图重写全部帧。
  */
@@ -26,76 +29,53 @@ import zlib from 'node:zlib';
 
 export const ICO = new URL('../../src-tauri/icons/icon.ico', import.meta.url);
 
-/** 一只鼠标的各部分在画布里的比例，单位是画布边长。字段名同 tray.rs 的 Shape */
-export const BOLD = {
-  rx: 0.37, // 鼠标半宽
-  top: 0.35, // 顶边到中心
-  bottom: 0.35, // 底边到中心
-  dome: 0.27, // 顶部圆拱的高
-  bottom_dome: 0.19, // 底部收圆的高
-  groove_hw: 0.05, // 分键槽半宽
-  groove_end: -0.1, // 分键槽底端到中心
-  lamp_r: 0.12, // 指示灯半径
-  lamp_cy: 0.1, // 指示灯中心
-  radius: 0.22, // 底板圆角
-  tile: [0x11, 0x11, 0x13],
-  body: [0xff, 0xff, 0xff],
+/**
+ * 大图里的像素数（画布 1024，中心在 512）。鼠标各部分到中心的距离都从中心量起。
+ * test/icon.test.js 拿 design/icon/IncottFramedMouse/incottframedmouse.svg 逐项核对这里的数
+ */
+export const MASTER = {
+  frame: 758, // 方框外沿的边长
+  frameRadius: 170, // 方框圆角
+  stroke: 32, // 大图里的线宽（缩到 256 像素那一帧是 8 像素）
+  mouseW: 394,
+  mouseH: 522,
+  notchW: 47, // 分键线的宽
+  notchTop: 37.9, // 分键线顶端离鼠标顶边
+  notchEnd: 0.4, // 分键线通到鼠标高度的多少
+  lampR: 56.9,
+  lampCy: 110.5, // 灯心在中心下方
+  tileRadius: 224, // 圆角预览图（.preview.svg 的 clipPath）的半径；.ico 里的帧用它
 };
-
-/** 量自 design/icon/IncottLitMouse/incottlitmouse.svg */
-export const REGULAR = {
-  rx: 0.215,
-  top: 0.354,
-  bottom: 0.355,
-  dome: 0.244,
-  bottom_dome: 0.172,
-  groove_hw: 0.033,
-  groove_end: -0.113,
-  lamp_r: 0.043,
-  lamp_cy: 0.107,
-  radius: 0.22,
-  tile: [0x23, 0x23, 0x27],
-  body: [0xed, 0xed, 0xee],
-};
-
-/** [边长, 取多少 BOLD]，节点之间线性过渡 */
-export const BOLD_SHARE = [
-  [24, 1],
-  [32, 0.55],
-  [48, 0.4],
-  [64, 0],
-];
+/** 鼠标的顶部圆拱、底部收圆各是半宽的多少（tray.rs 里也是这两个数） */
+const DOME = 0.78;
+const BOTTOM_DOME = 0.42;
 
 /** 由本脚本画的那几帧 */
-export const SMALL_SIZES = [16, 24, 32, 48];
+export const SMALL_SIZES = [16, 24, 32, 48, 64];
 
-/** 灯的颜色，含义同主界面 */
-export const LAMP = {
-  off: [0x3a, 0x3a, 0x40],
-  green: [0x46, 0xc9, 0x8c],
-  yellow: [0xf0, 0xb3, 0x4c],
-  red: [0xf0, 0x58, 0x5d],
-};
+/** 这一帧及以下：底板更黑、线条纯白——细线被抗锯齿冲淡以后还得站得住 */
+const PURE_WHITE_BELOW = 24;
 
-export function boldShare(size) {
-  let [x0, y0] = BOLD_SHARE[0];
-  if (size <= x0) return y0;
-  for (const [x1, y1] of BOLD_SHARE.slice(1)) {
-    if (size <= x1) return y0 + ((y1 - y0) * (size - x0)) / (x1 - x0);
-    [x0, y0] = [x1, y1];
-  }
-  return y0;
+/** 指示灯的颜色（界面的 --success） */
+export const LAMP_GREEN = [0x46, 0xc9, 0x8c];
+
+/** 方框的线宽（像素）：16 像素下 1，64 像素下 3；再往上由大图缩放接手（128 像素下 4，256 下 8） */
+export function strokeFor(size) {
+  return Math.max(1, Math.round(0.0948 * size ** 0.8));
 }
 
-export function blend(t) {
-  const mix = (a, b) => a * t + b * (1 - t);
-  const out = {};
-  for (const key of Object.keys(BOLD)) {
-    out[key] = Array.isArray(BOLD[key])
-      ? BOLD[key].map((v, i) => Math.round(mix(v, REGULAR[key][i])))
-      : mix(BOLD[key], REGULAR[key]);
-  }
-  return out;
+/** 边长 size 的一帧里各部分落在哪（像素，到中心的距离；inset 是方框外沿离画布边的距离） */
+export function layoutFor(size) {
+  const u = size / 1024;
+  const frame = MASTER.frame * u;
+  return {
+    size,
+    u,
+    inset: Math.round((size - frame) / 2), // 取整：方框的直边落在像素边界上，线才是实的
+    stroke: strokeFor(size),
+    frameRadius: MASTER.frameRadius * u,
+    tileRadius: MASTER.tileRadius * u,
+  };
 }
 
 // ── 画 ─────────────────────────────────────────────────────
@@ -111,58 +91,67 @@ const sdEllipse = (x, y, rx, ry) => {
   return (k0 * (k0 - 1)) / k1;
 };
 const coverage = (d) => Math.min(1, Math.max(0, 0.5 - d));
+/** 把 src（不透明度 s）叠在 dst（不透明度 d）上，返回合成后的颜色和不透明度 */
+const over = (dst, d, src, s) => {
+  const a = s + d * (1 - s);
+  return [src.map((c, k) => (a > 0 ? (c * s + dst[k] * d * (1 - s)) / a : 0)), a];
+};
 
 /**
  * 画 size × size 的图标，返回 RGBA。
- * 自下而上合成：底板 → 鼠标 → 分键槽（底色）→ 指示灯。槽和灯不重叠。
- * 窄于 1.5px 的细节在小尺寸下会被抗锯齿抹掉，给了下限
+ * 自下而上合成：底板 → 方框 → 鼠标 → 分键线（底色）→ 指示灯
  */
-export function paint(shape, lamp, size) {
-  const s = size;
-  const half = s / 2;
+export function paint(size) {
+  const { u, inset, stroke, frameRadius, tileRadius } = layoutFor(size);
+  const half = size / 2;
+  const outer = half - inset; // 方框外沿到中心
+  const pure = size <= PURE_WHITE_BELOW;
+  const tile = pure ? [0x11, 0x11, 0x13] : [0x23, 0x23, 0x27];
+  const body = pure ? [0xff, 0xff, 0xff] : [0xed, 0xed, 0xee];
   // 鼠标：顶部圆拱，中间直边，底部收圆
-  const rx = shape.rx * s;
-  const top = -shape.top * s;
-  const dome = shape.dome * s;
-  const bottomDome = shape.bottom_dome * s;
+  const rx = (MASTER.mouseW / 2) * u;
+  const top = (-MASTER.mouseH / 2) * u;
+  const dome = DOME * rx;
+  const bottomDome = BOTTOM_DOME * rx;
   const domeCy = top + dome;
-  const bottomCy = shape.bottom * s - bottomDome;
-  // 分键槽：从顶边通下来
-  const grooveHw = Math.max(shape.groove_hw * s, 0.75);
-  const grooveTop = top - 1;
-  const grooveEnd = shape.groove_end * s;
+  const bottomCy = (MASTER.mouseH / 2) * u - bottomDome;
+  // 分键线：离顶边一点，通到 40% 的高度（通到顶的话会和上面的框连成一条线）
+  const notchHw = Math.max((MASTER.notchW / 2) * u, 0.3);
+  const notchTop = top + MASTER.notchTop * u;
+  const notchEnd = top + MASTER.notchEnd * MASTER.mouseH * u;
   // 指示灯
-  const lampR = Math.max(shape.lamp_r * s, 1.6);
-  const lampCy = shape.lamp_cy * s;
-  const radius = shape.radius * s;
+  const lampR = Math.max(MASTER.lampR * u, 0.9);
+  const lampCy = MASTER.lampCy * u;
 
   const rgba = new Uint8Array(size * size * 4);
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const px = x + 0.5 - half;
       const py = y + 0.5 - half;
-      const tile = coverage(sdRoundBox(px, py, half, half, radius));
-      if (tile <= 0) continue;
-      const body = coverage(
+      const base = coverage(sdRoundBox(px, py, half, half, tileRadius));
+      if (base <= 0) continue;
+      // 方框 = 落在外沿之内的覆盖率 − 落在内沿之内的覆盖率（次序不能反：反过来是负的，框会整个消失）
+      const frame = Math.max(
+        coverage(sdRoundBox(px, py, outer, outer, frameRadius)) -
+          coverage(sdRoundBox(px, py, outer - stroke, outer - stroke, Math.max(frameRadius - stroke, 0))),
+        0,
+      );
+      const mouse = coverage(
         Math.min(
           sdEllipse(px, py - domeCy, rx, dome),
           sdEllipse(px, py - bottomCy, rx, bottomDome),
           sdRoundBox(px, py - (domeCy + bottomCy) / 2, rx, (bottomCy - domeCy) / 2, 0),
         ),
       );
-      const groove =
-        coverage(
-          sdRoundBox(px, py - (grooveTop + grooveEnd) / 2, grooveHw, (grooveEnd - grooveTop) / 2, grooveHw),
-        ) * body;
-      const lit = coverage(Math.hypot(px, py - lampCy) - lampR) * body;
-      const plain = body - groove - lit;
+      const notch =
+        coverage(sdRoundBox(px, py - (notchTop + notchEnd) / 2, notchHw, (notchEnd - notchTop) / 2, notchHw)) * mouse;
+      const lit = coverage(Math.hypot(px, py - lampCy) - lampR) * mouse;
+      let [rgb, a] = over(tile, 1, body, frame);
+      [rgb, a] = over(rgb, a, body, mouse * (1 - notch));
+      [rgb, a] = over(rgb, a, LAMP_GREEN, lit);
       const i = (y * size + x) * 4;
-      for (let k = 0; k < 3; k++) {
-        rgba[i + k] = Math.round(
-          shape.tile[k] * (1 - body) + shape.body[k] * plain + shape.tile[k] * groove + lamp[k] * lit,
-        );
-      }
-      rgba[i + 3] = Math.round(tile * 255);
+      for (let k = 0; k < 3; k++) rgba[i + k] = Math.round(rgb[k]);
+      rgba[i + 3] = Math.round(a * base * 255);
     }
   }
   return rgba;
@@ -170,7 +159,7 @@ export function paint(shape, lamp, size) {
 
 /** 应用图标在边长 size 时的那一帧（绿码灯） */
 export function frameFor(size) {
-  return paint(blend(boldShare(size)), LAMP.green, size);
+  return paint(size);
 }
 
 // ── PNG ────────────────────────────────────────────────────
@@ -329,15 +318,12 @@ export function withSmallFrames(buf) {
 }
 
 // ── 预览图 ─────────────────────────────────────────────────
-/** 放大 6 倍的预览图（PNG）：托盘图标在四种灯色下的 16 / 20 / 24 / 32，和 ico 里现有的各帧；浅色、深色底各一份 */
+/** 放大预览图（PNG）：ico 里现有的各帧；浅色、深色底各一份 */
 export function sheet(buf) {
   const Z = 6;
   const cell = 60;
   const pad = 12;
   const rows = [
-    ...[16, 20, 24, 32].map((size) =>
-      Object.values(LAMP).map((lamp) => ({ rgba: paint(blend(boldShare(size)), lamp, size), w: size, h: size, zoom: Z })),
-    ),
     readIco(buf).map((f) => {
       const img = decodePng(f.data);
       return { rgba: img.rgba, w: f.w, h: f.h, zoom: f.w >= 128 ? 2 : Z };
@@ -385,7 +371,7 @@ function main(argv) {
   const sheetAt = argv.indexOf('--sheet');
   if (sheetAt !== -1) {
     writeFileSync(path.resolve(argv[sheetAt + 1]), sheet(readFileSync(ICO)));
-    console.log(`预览图：${argv[sheetAt + 1]}（上：托盘图标 16 / 20 / 24 / 32 × 灯灭 / 绿 / 黄 / 红；下：ico 里的各帧）`);
+    console.log(`预览图：${argv[sheetAt + 1]}（ico 里的各帧；上：浅色底，下：深色底）`);
     return 0;
   }
   const stale = staleFrames(readFileSync(ICO));

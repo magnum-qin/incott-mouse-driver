@@ -221,7 +221,9 @@ body.lang-switched { animation: lang-switched var(--t-base) var(--ease-out); }
   border: 2px solid var(--border-strong); border-top-color: var(--accent);
   animation: spin .8s linear infinite;
 }
-/* 电量：图标里的填充宽度跟电量走（--fill 由渲染层写入） */
+/* 电量：图标里的填充跟电量走（--lvl 是 0~1，由渲染层写在按钮上）。
+   填充只在左右各留 2px 的内槽里走。之前它是背景图、宽度按百分比算——百分比是相对整个图标的，
+   再加上左边让开的 2px，电量一过 88% 就顶穿右壁 */
 .batt {
   display: inline-flex; align-items: center; gap: 6px; height: var(--ctl-h); padding: 0 2px;
   font: 600 var(--fs-12) var(--font-mono); color: var(--success); border-radius: var(--radius-sm);
@@ -231,7 +233,11 @@ body.lang-switched { animation: lang-switched var(--t-base) var(--ease-out); }
 .batt .cell {
   flex: none; /* 电量展开 / 收起时容器很窄，图标不跟着被挤扁，而是被裁在边上 */
   position: relative; width: 20px; height: 11px; border: 1.5px solid currentColor; border-radius: 3px;
-  background: linear-gradient(currentColor, currentColor) left 2px center / var(--fill, 50%) calc(100% - 4px) no-repeat;
+}
+.batt .cell::before {
+  content: ""; position: absolute; left: 2px; top: 2px; bottom: 2px;
+  width: calc((100% - 4px) * var(--lvl, .5));
+  background: currentColor;
 }
 .batt .cell::after {
   content: ""; position: absolute; right: -4px; top: 3px; width: 2px; height: 3px;
@@ -273,6 +279,7 @@ body.lang-switched { animation: lang-switched var(--t-base) var(--ease-out); }
 .settings-item input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .settings-text { display: flex; flex-direction: column; gap: 2px; }
 .settings-desc { font-size: var(--fs-12); line-height: 1.4; color: var(--text-muted); transition: opacity var(--t-fast) var(--ease-state); }
+.settings-desc.bad { color: var(--danger); } /* 这一项存不进去：说明文字换成错误信息 */
 .settings-item.is-off { color: var(--text-muted); cursor: default; }
 .settings-item.is-off:hover { background: none; color: var(--text-muted); }
 .settings-item.is-off .settings-desc { color: var(--text-muted); opacity: .7; }
@@ -716,18 +723,6 @@ input:disabled + .tog { opacity: .4; border-color: var(--border-strong); }
    进场从下方 4px 滑入；收起由 app.js 的 toggleShown 先快速淡出（透明度那一段也归它） */
 .apply-state { display: inline-flex; align-items: center; gap: 8px; min-width: 0; animation: rise-in var(--t-base) var(--ease-out); }
 .apply-state .status-text { color: var(--text); }
-
-/* ── 提示条：进场从下方滑入，退场加速离开 ── */
-.toast {
-  position: fixed; right: 20px; bottom: 64px; z-index: 999; pointer-events: none;
-  max-width: min(420px, calc(100vw - 40px)); padding: 10px 14px;
-  background: var(--bg-popover); border: 1px solid var(--border-strong); border-left: 2px solid var(--accent);
-  border-radius: var(--radius-sm); box-shadow: var(--shadow-pop);
-  font-size: var(--fs-125); line-height: 1.45; color: var(--text);
-  opacity: 0; transform: translateY(6px);
-  transition: opacity var(--t-exit) var(--ease-in), transform var(--t-exit) var(--ease-in);
-}
-.toast.show { opacity: 1; transform: none; transition: opacity var(--t-base) var(--ease-out), transform var(--t-base) var(--ease-out); }
 
 /* ── 响应式：窗口最小 860×580 ── */
 @media (max-width: 980px) {

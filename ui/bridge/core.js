@@ -9,6 +9,8 @@
 
 import * as P from '../shared/protocol.js';
 import * as i18n from '../shared/i18n.js';
+import { linkAction, openOrder, deviceAnswered } from '../shared/link.js';
+import { createSteadyBattery, parseBatteryMemory } from '../shared/battery.js';
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -25,8 +27,20 @@ let lastPushProfile = null; // 上一次推送的配置序号（检测鼠标上�
 let writing = false; // 写操作进行中（电量轮询跳过，避免打断 apply/宏上传序列）
 let batteryTimer = null;
 
+// ── 连接跟随（见 shared/link.js）：进了软件自动连接，鼠标在接收器和线缆之间移动时连接跟着换 ──
+let wanted = true; // 想要连接。启动时就是 true：自动连，没连上时设备出现也自动连；用户点「断开」后为 false，点「连接」再变回 true
+let linkLost = false; // 连着的接口消失了（hid://error），要重新找一条能接的
+let linkGen = 0; // 用户每点一次断开就 +1：让已经在途的切换作废
+let reconcileTimer = null;
+let reconciling = null; // 正在进行的这一次对连接
+let rerun = false; // 对连接期间又来了变化：做完再来一次
+let pendingReconcile = false; // 正在往鼠标里写时来了变化，写完再对一次
+let retries = 0; // 换不过去时的重试次数（接口刚冒出来时可能还打不开）
+const RETRY_DELAYS = [600, 1500, 4000];
+const steadyBattery = createSteadyBattery(); // 有线时的电量抖动
+
 // 本地订阅（替代 webContents.send）
-const subs = { battery: [], toast: [], profile: [], disconnected: [], status: [] };
+const subs = { battery: [], profile: [], disconnected: [], status: [], deviceChanged: [], arrived: [] };
 const emitSub = (name, arg) => {
   for (const cb of subs[name]) {
     try {
@@ -115,12 +129,19 @@ async function withDevice(fn) {
   });
 }
 
-/** 设备拔出/掉线：清理状态、托盘复位、通知界面回到未连接 */
+/** 设备拔出/掉线：丢掉当前连接；之后由 reconcile 看剩下的接口里还有没有能接的 */
 function handleDeviceGone(err, fromPath) {
   if (!device) return; // 已处理过，避免重复
   // 旧连接的迟到错误不能误伤新连接（Rust 事件带 path）
   if (fromPath && fromPath !== device.path) return;
   console.warn('[hid] 设备已断开:', String((err && err.message) || err || ''));
+  forgetDevice();
+  linkLost = true;
+  scheduleReconcile(400); // 给系统一点时间把接口列表更新干净
+}
+
+/** 丢掉当前连接的状态（设备可能还在，只是要换一条路连） */
+function forgetDevice() {
   device = null;
   deviceInfo = null;
   lastPushDpi = null;
@@ -129,7 +150,15 @@ function handleDeviceGone(err, fromPath) {
   invoke('hid_close').catch(() => {}); // 清掉 Rust 侧残余状态（IO 线程可能已退出）
   resetQuickStatus();
   updateTrayBattery(null);
-  emitSub('disconnected', undefined);
+}
+
+/** 写序列结束。期间来了设备变化（鼠标插线 / 拔线）没有处理，现在再对一次连接 */
+function endWrite() {
+  writing = false;
+  if (pendingReconcile) {
+    pendingReconcile = false;
+    scheduleReconcile(0);
+  }
 }
 
 // ── 操作分发表：action → 命令构造器（上游原样平移）──────────
@@ -257,6 +286,16 @@ async function readBatteryValue() {
   // 设备休眠时可能回显 0x89 但数据区全 0 —— 真实电量 0% 已关机，视为无效读取
   if (level === 0) return null;
   return { level, charging };
+}
+
+/**
+ * 读一次电量并给人看。有线上报每 3 秒一次，读数在相邻两个值之间抖动（接近满电时 96 / 97），
+ * 经过 steadyBattery 压一下；无线时原样返回
+ */
+async function readBattery() {
+  const val = await readBatteryValue();
+  if (!val || !device || device.isWireless) return val;
+  return { level: steadyBattery.push(val.level), charging: val.charging };
 }
 
 async function readDeviceInfo() {
@@ -396,6 +435,9 @@ async function attemptOpen(list) {
   return { entry: null, err: lastErr };
 }
 
+/**
+ * pathArg：不传 = 自动挑（枚举靠后的先试）；传路径 = 只试它；传路径数组 = 按顺序试这几个
+ */
 async function openDevice(pathArg) {
   // 打开也进队列：设备切换期间不能让轮询/浮层读插进来
   const opened = await withIo(async () => {
@@ -406,9 +448,13 @@ async function openDevice(pathArg) {
         /* 句柄可能已失效 */
       }
     }
-    const cached = deviceCache || [];
-    let first = pathArg ? cached.filter((d) => d.path === pathArg) : [...cached].reverse();
-    if (pathArg && first.length === 0) first = [{ path: pathArg }]; // 指定 path 但不在缓存里，直接试
+    const pick = (all) => {
+      if (!pathArg) return [...all].reverse();
+      if (Array.isArray(pathArg)) return openOrder(all, (d) => pathArg.includes(d.path));
+      return all.filter((d) => d.path === pathArg);
+    };
+    let first = pick(deviceCache || []);
+    if (pathArg && !Array.isArray(pathArg) && first.length === 0) first = [{ path: pathArg }]; // 指定 path 但不在缓存里，直接试
     if (first.length) {
       const r1 = await attemptOpen(first);
       if (r1.entry) return r1.entry;
@@ -419,7 +465,10 @@ async function openDevice(pathArg) {
     if (fresh.length === 0) {
       throw new Error('未找到 Incott 鼠标（VID 0x093A），请确认已插好或接收器在线');
     }
-    const second = pathArg ? fresh.filter((d) => d.path === pathArg) : [...fresh].reverse();
+    const second = pick(fresh);
+    if (Array.isArray(pathArg) && second.length === 0) {
+      throw new Error('要换过去的接口已经不在了');
+    }
     const r2 = await attemptOpen(second.length ? second : [...fresh].reverse());
     if (r2.entry) return r2.entry;
     throw new Error(
@@ -427,12 +476,118 @@ async function openDevice(pathArg) {
     );
   });
   device = opened;
+  wanted = true;
+  linkLost = false;
+  steadyBattery.reset(); // 换了上报来源：下一个读数直接采纳
   deviceInfo = await withIo(() => readDeviceInfo()); // 连接即识别型号/传感器/8K 接收器（失败为 null）
   lastPushDpi = null; // 新连接重新建立推送基线
   lastPushProfile = null;
   pollBattery(); // 连接后立即读一次电量更新托盘
   refreshQuickStatus(); // 浮层用的 DPI/回报率/配置（后台补读，不阻塞连接返回）
   return deviceState();
+}
+
+// ── 连接跟随 ───────────────────────────────────────────────
+const RECONCILE_DELAY = 600; // 接口是一个一个冒出来的（有线有 Col01、Col02），等列表稳定下来再动
+
+function scheduleReconcile(delay) {
+  clearTimeout(reconcileTimer);
+  reconcileTimer = setTimeout(reconcile, delay);
+}
+
+/**
+ * 设备列表变了（或者连着的接口没了）之后，把连接对到鼠标当前所在的那条路上：
+ *  - 连着接收器、出现了有线鼠标 → 换到有线（这时接收器不应答读命令，也不再上报）
+ *  - 连着的接口不见了 → 试剩下的接口（拔线后回到接收器）；一个都没有才告诉界面「已断开」
+ *  - 还没连上、出现了可以连的接口 → 让界面去连（比如接收器插回来了）
+ * 正在往鼠标里写的时候不换——会打断写序列，写完再对一次
+ */
+function reconcile() {
+  reconcileTimer = null;
+  if (!wanted) return;
+  if (writing) {
+    pendingReconcile = true;
+    return;
+  }
+  if (reconciling) {
+    rerun = true;
+    return reconciling;
+  }
+  const gen = linkGen;
+  reconciling = (async () => {
+    if (linkLost) await afterLoss(gen);
+    else await follow(gen);
+  })();
+  const settled = () => {
+    reconciling = null;
+    if (rerun) {
+      rerun = false;
+      scheduleReconcile(RECONCILE_DELAY);
+    }
+  };
+  reconciling.then(settled, settled);
+  return reconciling;
+}
+
+/** 连着的接口没了（拔线、接收器被拔）：把剩下的接口挨个试一遍，一个都打不开才算断开 */
+async function afterLoss(gen) {
+  linkLost = false;
+  if (device) forgetDevice();
+  let list = [];
+  try {
+    list = await listDevicesAsync(true);
+  } catch (_) {
+    /* 枚举失败：当作没有可以接的 */
+  }
+  if (gen !== linkGen) return;
+  if (!list.length) {
+    emitSub('disconnected', undefined); // 回到「未连接」；设备再出现时会自动重连（wanted 没变）
+    return;
+  }
+  try {
+    const st = await openDevice(openOrder(list).map((d) => d.path));
+    if (gen !== linkGen) return;
+    await announce(st.isWireless ? 'toWireless' : 'toWired', st, gen);
+  } catch (e) {
+    console.warn('[hid] 重新连接失败:', String((e && e.message) || e));
+    if (gen === linkGen) emitSub('disconnected', undefined);
+  }
+}
+
+/** 设备列表变了：看鼠标是不是换了路（连着接收器时插上了线） */
+async function follow(gen) {
+  try {
+    const list = await listDevicesAsync(true);
+    if (gen !== linkGen) return;
+    const action = linkAction(device, list);
+    if (action === 'gone') {
+      await afterLoss(gen);
+    } else if (action === 'connect') {
+      // 还没连上、设备出现了（刚进软件那一次是界面自己先连的，这里接的是之后的）：
+      // 连接流程带着转圈和读配置，在界面那边，所以只发个信号
+      emitSub('arrived', undefined);
+    } else if (action === 'toWired') {
+      const st = await openDevice(openOrder(list, (d) => !d.isWireless).map((d) => d.path));
+      if (gen !== linkGen) return;
+      retries = 0;
+      await announce('toWired', st, gen);
+    } else {
+      retries = 0;
+    }
+  } catch (e) {
+    // 接口刚冒出来时可能还打不开：隔一会儿再试，几次都不行就等下一次设备变化
+    const delay = RETRY_DELAYS[retries++];
+    if (delay != null) scheduleReconcile(delay);
+    else console.warn('[hid] 连接没换成:', String((e && e.message) || e));
+  }
+}
+
+/** 换好连接之后告诉界面，并把新连接上读到的回报率 / 档位推给它（读数屏跟着鼠标走） */
+async function announce(reason, st, gen) {
+  await refreshQuickStatus();
+  if (gen !== linkGen) return;
+  emitSub('deviceChanged', { reason, state: st });
+  emitSub('status', { power: batteryLevel, charging: batteryCharging, rate: quick.rate, dpiIndex: quick.dpiIndex, profileIndex: quick.profile });
 }
 
 // ── api 方法（对应 mouse:* IPC）────────────────────────────
@@ -444,16 +599,18 @@ async function exec(action, ...args) {
   try {
     return await withDevice((dev) => dev.sendFeatureReport(cmdBytes).then(() => true));
   } finally {
-    writing = false;
+    endWrite();
   }
 }
 
 async function read(readType, ...args) {
   if (readType === 'battery') {
-    const val = await withDevice(() => readBatteryValue());
-    if (val == null) throw new Error('设备未响应（可能处于休眠状态）');
-    updateTrayBattery(val.level, val.charging); // 手动刷新同步托盘
-    return val;
+    const fresh = await withDevice(() => readBattery());
+    // 读不到（无线时这条命令不带电量）：给上一次知道的，标上 remembered 让界面注明
+    const val = fresh || recallBattery();
+    if (!val) throw new Error('设备未响应（可能处于休眠状态）');
+    if (fresh) updateTrayBattery(val.level, val.charging); // 手动刷新同步托盘
+    return { level: val.level, charging: val.charging, remembered: !fresh };
   }
   const def = READ_ACTIONS[readType];
   if (!def) throw new Error(`未知读取: ${readType}`);
@@ -472,6 +629,8 @@ async function read(readType, ...args) {
 
 async function readConfig() {
   const snap = await withDevice(() => readConfigSnapshot());
+  // 设备没应答（多半是无线鼠标在休眠）时读回来的是一整份空快照：标出来，界面等它醒了再补读
+  snap.answered = deviceAnswered(snap);
   // 顺带把配置序号同步给托盘浮层
   if (snap && snap.profileIndex != null) {
     quick.profile = snap.profileIndex;
@@ -494,7 +653,7 @@ async function apply(ops) {
       return true;
     });
   } finally {
-    writing = false;
+    endWrite();
   }
 }
 
@@ -517,13 +676,13 @@ async function uploadMacro(macro) {
       return true;
     });
   } finally {
-    writing = false;
+    endWrite();
   }
 }
 
 // ── 托盘状态机（对应上游 quick / refreshQuickStatus / trayStatus）──
 const quick = { dpi: null, dpiIndex: null, levels: null, rate: null, profile: null };
-let refreshingQuick = false;
+let quickRefresh = null; // 正在进行的那一次补读（换了连接后要等它读完）
 
 function resetQuickStatus() {
   quick.dpi = null;
@@ -536,10 +695,9 @@ function resetQuickStatus() {
 function trayStatus() {
   return {
     connected: !!device,
-    // 与主界面读数屏的写法一致：G24 Pro · 8K
-    name: deviceInfo
-      ? [deviceInfo.name || deviceInfo.model, deviceInfo.is8KReceiver ? '8K' : ''].filter(Boolean).join(' · ')
-      : null,
+    // 型号在这里给（语言无关）；连接方式只给代码，浮层按当前语言拼成「G24 Pro · 8K」或「G24 Pro · 有线」
+    name: deviceInfo ? deviceInfo.name || deviceInfo.model : null,
+    link: deviceInfo && deviceInfo.is8KReceiver ? '8k' : device && !device.isWireless ? 'wired' : null,
     wireless: device ? !!device.isWireless : false,
     battery: batteryLevel,
     charging: batteryCharging,
@@ -557,10 +715,20 @@ function broadcastTrayStatus() {
   invoke('tray_set_status', { status: trayStatus() }).catch(() => {});
 }
 
-/** 读一次 DPI 档位、当前档 DPI、回报率（3 条命令，约 150ms）；单项失败保持旧值 */
-async function refreshQuickStatus() {
-  if (!device || writing || refreshingQuick) return;
-  refreshingQuick = true;
+/**
+ * 读一次 DPI 档位、当前档 DPI、回报率（3 条命令，约 150ms）；单项失败保持旧值。
+ * 三条命令共用通道，不能重入：已经在读了就返回那一次，调用方可以 await 它
+ */
+function refreshQuickStatus() {
+  if (!device || writing) return Promise.resolve();
+  if (quickRefresh) return quickRefresh;
+  quickRefresh = readQuickStatus().finally(() => {
+    quickRefresh = null;
+  });
+  return quickRefresh;
+}
+
+async function readQuickStatus() {
   try {
     await withIo(async () => {
       if (!device) return;
@@ -590,8 +758,6 @@ async function refreshQuickStatus() {
   } catch (e) {
     if (isDeviceGoneError(e)) handleDeviceGone(e);
     return;
-  } finally {
-    refreshingQuick = false;
   }
   broadcastTrayStatus();
 }
@@ -600,31 +766,67 @@ function updateTrayBattery(battery, charging) {
   batteryLevel = battery;
   if (charging != null) batteryCharging = charging;
   if (battery == null) batteryCharging = false;
+  if (battery != null) rememberBattery(battery, batteryCharging);
   invoke('tray_set_battery', { level: battery, charging: batteryCharging }).catch(() => {});
   broadcastTrayStatus();
+}
+
+// ── 上一次知道的电量 ───────────────────────────────────────
+// 无线（8K 接收器）时读命令不带电量，电量只能等鼠标上报；鼠标睡着以后既不应答也不上报
+// （docs/protocol.md §4）。刚启动、刚换路、刚重连的那一会儿手里可能什么都没有：先把上一次知道的拿出来显示。
+const BATTERY_MEMORY = 'incott-battery-memory';
+let lastBattery = readBatteryMemory();
+
+/** localStorage 里上一次知道的电量（启动时读一次；读不到就算了） */
+function readBatteryMemory() {
+  try {
+    return parseBatteryMemory(localStorage.getItem(BATTERY_MEMORY));
+  } catch (_) {
+    return null;
+  }
+}
+
+/** 设备报了电量：记下来，存到下次启动也还知道 */
+function rememberBattery(level, charging) {
+  lastBattery = { level, charging, at: Date.now() };
+  try {
+    localStorage.setItem(BATTERY_MEMORY, JSON.stringify(lastBattery));
+  } catch (_) {
+    /* 存不下就只在这次运行里记得 */
+  }
+}
+
+/**
+ * 手里没有新读数：把上一次知道的电量拿去给托盘显示。返回它，或者 null（从来没有读到过）
+ */
+function recallBattery() {
+  if (!lastBattery) return null;
+  batteryLevel = lastBattery.level;
+  batteryCharging = lastBattery.charging;
+  invoke('tray_set_battery', { level: batteryLevel, charging: batteryCharging }).catch(() => {});
+  broadcastTrayStatus();
+  return lastBattery;
 }
 
 async function pollBattery() {
   if (!device || writing) return; // 未连接或正在写，跳过本次
   try {
-    const val = await withIo(() => readBatteryValue());
+    const val = await withIo(() => readBattery());
     if (val != null) updateTrayBattery(val.level, val.charging);
+    else if (batteryLevel == null) recallBattery(); // 刚换了一条连接：先显示上一次知道的，等鼠标上报
   } catch (e) {
     if (isDeviceGoneError(e)) handleDeviceGone(e);
   }
 }
 
-/** DPI 键切换提示：窗口可见时发 toast，否则走系统通知 */
+/** DPI 键切换提示：窗口露着的时候读数屏和 DPI 页自己会亮，不用提示；窗口藏着才走系统通知 */
 function notifyDpiSwitch(s) {
+  if (document.visibilityState === 'visible' && !document.hidden) return;
   const parts = [i18n.t('dpiSwitchToast').replace('{n}', s.dpiIndex + 1)];
   if (s.rate) parts.push(`${s.rate}Hz`);
   parts.push(`${i18n.t('batteryLabel')} ${s.power}%${s.charging ? '⚡' : ''}`);
   const text = parts.join(' · ');
-  if (document.visibilityState === 'visible' && !document.hidden) {
-    emitSub('toast', text);
-  } else {
-    invoke('notify', { title: 'Incott Mouse Driver', body: text }).catch(() => {});
-  }
+  invoke('notify', { title: 'Incott Mouse Driver', body: text }).catch(() => {});
 }
 
 // ── 设备主动上报（Input Report：电量/DPI/回报率/配置变化）────
@@ -632,10 +834,12 @@ function onData(buf) {
   if (!device) return;
   const s = P.parseStatusPush(buf);
   if (!s) return;
-  if (s.power !== batteryLevel || s.charging !== batteryCharging) {
-    updateTrayBattery(s.power, s.charging);
+  // 有线上报每 3 秒一次，读数会在相邻两个值之间抖动：压一下再给人看
+  const level = device.isWireless ? s.power : steadyBattery.push(s.power);
+  if (level !== batteryLevel || s.charging !== batteryCharging) {
+    updateTrayBattery(level, s.charging);
   }
-  emitSub('battery', { level: s.power, charging: s.charging });
+  emitSub('battery', { level: batteryLevel, charging: batteryCharging });
   // 界面据此让读数屏 / DPI 页跟着鼠标走（按了 DPI 键换了档位等）
   emitSub('status', s);
   // 浮层的 DPI/回报率/配置跟着推送走；换了档位要补读该档的 DPI 数值
@@ -662,8 +866,13 @@ function onData(buf) {
 export const api = {
   listDevices: () => listDevicesAsync(),
   openDevice: (path) => openDevice(path),
-  closeDevice: () =>
-    withIo(async () => {
+  closeDevice: () => {
+    wanted = false; // 用户主动断开：连接不再跟着鼠标走，已经在途的切换作废
+    linkLost = false;
+    linkGen++;
+    clearTimeout(reconcileTimer);
+    reconcileTimer = null;
+    return withIo(async () => {
       if (device) {
         try {
           await invoke('hid_close');
@@ -679,7 +888,8 @@ export const api = {
       resetQuickStatus();
       updateTrayBattery(null); // 托盘电量归零为「未连接」
       return deviceState();
-    }),
+    });
+  },
   getState: () => Promise.resolve(deviceState()),
   getConstants: () => Promise.resolve(getConstants()),
   exec,
@@ -689,10 +899,13 @@ export const api = {
   uploadMacro,
   onProfile: (cb) => subs.profile.push(cb),
   onBattery: (cb) => subs.battery.push(cb),
-  onToast: (cb) => subs.toast.push(cb),
   onDisconnected: (cb) => subs.disconnected.push(cb),
   /** 订阅鼠标主动上报的状态 { power, charging, rate, dpiIndex, profileIndex } */
   onStatus: (cb) => subs.status.push(cb),
+  /** 订阅连接自动切换（鼠标插线 / 拔线）：{ reason: 'toWired' | 'toWireless', state } */
+  onDeviceChanged: (cb) => subs.deviceChanged.push(cb),
+  /** 还没连上、设备出现了：界面据此走一遍连接流程 */
+  onDeviceArrived: (cb) => subs.arrived.push(cb),
 };
 
 /** 启动：事件订阅 + 预枚举 + 电量轮询（对应上游 whenReady 里的初始化） */
@@ -707,6 +920,12 @@ export async function boot() {
   // 浮层弹出/请求刷新时补读实时状态
   await listen('tray://refresh', () => {
     refreshQuickStatus();
+  });
+  // 设备增减（鼠标插线 / 拔线、接收器插拔）：连接跟着鼠标走。枚举缓存先作废——
+  // 界面连接之前会先看一眼设备列表，不能让它看到设备出现之前的空列表
+  await listen('hid://devices', () => {
+    invalidateCache();
+    scheduleReconcile(RECONCILE_DELAY);
   });
   listDevicesAsync().catch(() => {}); // 后台预枚举（连接时秒开）
   if (!batteryTimer) {

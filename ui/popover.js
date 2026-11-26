@@ -3,7 +3,8 @@
  *
  * 只做三件事：把主进程推来的状态画到界面上、按 i18n 切换文案、把点击转成主进程动作。
  * 状态结构见主进程 trayStatus()：
- *   { connected, name, wireless, battery, charging, dpi, dpiIndex, levels, rate, profile, profileCount }
+ *   { connected, name, link, wireless, battery, charging, dpi, dpiIndex, levels, rate, profile, profileCount }
+ * link 是连接方式代码（'8k' = 8K 接收器，'wired' = 有线，null = 不标），文案在这里按当前语言拼
  */
 
 'use strict';
@@ -65,7 +66,8 @@ function render(status) {
   if (renderedLang !== window.i18n.getLang()) applyI18n();
 
   el.dot.classList.toggle('on', !!status.connected);
-  put(el.name, status.connected ? (status.name || 'Incott') : 'Incott');
+  const link = status.link === '8k' ? '8K' : status.link === 'wired' ? t('linkWired') : '';
+  put(el.name, status.connected ? [status.name || 'Incott', link].filter(Boolean).join(' · ') : 'Incott');
 
   if (!status.connected) {
     put(el.state, t('notConnected'));

@@ -1,8 +1,9 @@
 /**
  * 图标一致性审计。
- * 托盘图标是 Rust 现画的（src-tauri/src/tray.rs），应用图标的小尺寸帧是脚本现画的
- * （design/icon/small-frames.mjs）。两边必须永远是同一副样子——只差灯的颜色：
- * 参数要一致；.ico 里的帧要确实出自脚本；「修长」的那一端要确实是大图的比例。
+ * 应用图标和托盘图标是同一个构成：空心方框 + 细鼠标 + 绿灯，应用图标多一块底板。
+ * 这里核对两件事：小尺寸帧的比例和颜色确实是大图（design/icon/IncottFramedMouse）里的；
+ * .ico 里的小尺寸帧确实出自脚本（design/icon/small-frames.mjs）。
+ * （托盘图标在 src-tauri/src/tray.rs 里现画，那里有自己的单元测试。）
  */
 
 'use strict';
@@ -10,44 +11,30 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import { readFileSync } from 'node:fs';
-import { BOLD, REGULAR, BOLD_SHARE, LAMP, ICO, staleFrames } from '../design/icon/small-frames.mjs';
+import {
+  MASTER, LAMP_GREEN, ICO, SMALL_SIZES, staleFrames, frameFor, layoutFor,
+} from '../design/icon/small-frames.mjs';
 
 const ROOT = new URL('../', import.meta.url);
 const read = (rel) => readFileSync(new URL(rel, ROOT), 'utf8');
-const TRAY = read('src-tauri/src/tray.rs');
-const hexes = (text) => [...text.matchAll(/0x([\da-f]+)/gi)].map((m) => parseInt(m[1], 16));
-const rgb = (hex) => [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16));
+const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)); // 「#」后面每两位一色
+const TILE = [0x23, 0x23, 0x27];
+const BODY = [0xed, 0xed, 0xee];
 
-/** Rust 里 `const NAME: Shape = Shape { 字段: 数字或 [0x.., 0x.., 0x..], … };` 的字段表 */
-function rustShape(name) {
-  const body = TRAY.match(new RegExp(String.raw`const ${name}: Shape = Shape \{([^}]*)\}`))?.[1];
-  const shape = {};
-  for (const [, field, value] of body.matchAll(/(\w+):\s*(\[[^\]]*\]|[-\d.]+)/g)) {
-    shape[field] = value.startsWith('[') ? hexes(value) : Number(value);
-  }
-  return shape;
-}
-
-test('图标：托盘图标（tray.rs）和脚本里画小尺寸帧用的是同一套参数', () => {
-  assert.deepEqual(rustShape('BOLD'), BOLD);
-  assert.deepEqual(rustShape('REGULAR'), REGULAR);
-  const share = TRAY.match(/const BOLD_SHARE: \[\(u32, f32\); \d\] = \[([^\]]*)\]/)[1];
-  assert.deepEqual(
-    [...share.matchAll(/\((\d+), ([\d.]+)\)/g)].map((m) => [Number(m[1]), Number(m[2])]),
-    BOLD_SHARE,
-  );
-  assert.deepEqual(hexes(TRAY.match(/const LAMP_OFF: \[u8; 3\] = \[([^\]]*)\]/)[1]), LAMP.off);
-  const lampFor = TRAY.slice(TRAY.indexOf('fn lamp_for'), TRAY.indexOf('\n}\n', TRAY.indexOf('fn lamp_for')));
-  const [yellow, red, green] = [...lampFor.matchAll(/\[0x[\da-f]+, 0x[\da-f]+, 0x[\da-f]+\]/gi)].map((m) => hexes(m[0]));
-  assert.deepEqual([yellow, red, green], [LAMP.yellow, LAMP.red, LAMP.green]);
-});
-
-test('图标：「修长」的那一端就是应用图标大图的比例和颜色', () => {
-  const svg = read('design/icon/IncottLitMouse/incottlitmouse.svg');
-  const unit = 1 / Number(svg.match(/viewBox="0 0 (\d+) \d+"/)[1]); // 画布的一个像素
-  const centre = 0.5 / unit;
+test('图标：小尺寸帧的比例和颜色就是大图里的', () => {
+  const svg = read('design/icon/IncottFramedMouse/incottframedmouse.svg');
+  const centre = 512; // 画布 1024 的中心
   const near = (actual, expected, what) =>
-    assert.ok(Math.abs(actual - expected) < 0.003, `${what}：大图里是 ${actual.toFixed(4)}，REGULAR 里写的是 ${expected}`);
+    assert.ok(Math.abs(actual - expected) < 0.15, `${what}：大图里是 ${actual}，脚本里记的是 ${expected}`);
+
+  const rects = [...svg.matchAll(/<rect ([^>]+)\/>/g)].map((m) =>
+    Object.fromEntries([...m[1].matchAll(/([\w-]+)="([^"]+)"/g)].map((a) => [a[1], a[2]])));
+  assert.equal(rects.length, 4, '大图里应该有四块矩形：底板、方框、方框的内芯（挖空）、分键线');
+  const [background, frame, inner, notch] = rects;
+  near((centre - Number(frame.x)) * 2, MASTER.frame, '方框外沿边长');
+  near(Number(frame.rx), MASTER.frameRadius, '方框圆角');
+  near(Number(inner.x) - Number(frame.x), MASTER.stroke, '方框线宽');
+  near(Number(notch.width), MASTER.notchW, '分键线宽');
 
   // 鼠标轮廓：M / L 的落点和每段 C 的终点，依次是顶、右上、右下、底、左下、左上（最后回到顶）
   const paths = [...svg.matchAll(/<path d="([^"]+)" fill="#([\da-f]{6})"/gi)];
@@ -61,25 +48,53 @@ test('图标：「修长」的那一端就是应用图标大图的比例和颜�
     }
   }
   const [top, rightTop, rightBottom, bottom, , leftTop] = points;
-  near(((rightTop[0] - leftTop[0]) / 2) * unit, REGULAR.rx, '鼠标半宽');
-  near((centre - top[1]) * unit, REGULAR.top, '顶边');
-  near((bottom[1] - centre) * unit, REGULAR.bottom, '底边');
-  near((rightTop[1] - top[1]) * unit, REGULAR.dome, '顶部圆拱');
-  near((bottom[1] - rightBottom[1]) * unit, REGULAR.bottom_dome, '底部收圆');
+  const rx = (rightTop[0] - leftTop[0]) / 2;
+  near(rx * 2, MASTER.mouseW, '鼠标宽');
+  near(centre - top[1], MASTER.mouseH / 2, '顶边');
+  near(bottom[1] - centre, MASTER.mouseH / 2, '底边');
+  near(rightTop[1] - top[1], 0.78 * rx, '顶部圆拱');
+  near(bottom[1] - rightBottom[1], 0.42 * rx, '底部收圆');
+  near(Number(notch.y) - top[1], MASTER.notchTop, '分键线离顶边');
+  near((Number(notch.y) + Number(notch.height) - top[1]) / MASTER.mouseH, MASTER.notchEnd, '分键线通到多高');
 
-  const groove = paths[1][1].match(/M([\d.]+) [\d.]+ H([\d.]+) V([\d.]+) A([\d.]+) /);
-  near(((Number(groove[2]) - Number(groove[1])) / 2) * unit, REGULAR.groove_hw, '分键槽半宽');
-  near((Number(groove[3]) + Number(groove[4]) - centre) * unit, REGULAR.groove_end, '分键槽底端');
+  const circle = svg.match(/<circle cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)" fill="#([\da-f]{6})"/i);
+  near(Number(circle[3]), MASTER.lampR, '指示灯半径');
+  near(Number(circle[2]) - centre, MASTER.lampCy, '指示灯位置');
+  const preview = read('design/icon/IncottFramedMouse/incottframedmouse.preview.svg');
+  near(Number(preview.match(/<rect width="1024" height="1024" rx="(\d+)"/)[1]), MASTER.tileRadius, '底板圆角');
 
-  const circle = svg.match(/<circle cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"/);
-  near(Number(circle[3]) * unit, REGULAR.lamp_r, '指示灯半径');
-  near((Number(circle[2]) - centre) * unit, REGULAR.lamp_cy, '指示灯位置');
+  assert.deepEqual(rgb(background.fill), TILE, '底板颜色');
+  assert.deepEqual(rgb(frame.fill), BODY, '方框颜色');
+  assert.deepEqual(rgb(`#${paths[0][2]}`), BODY, '鼠标颜色');
+  assert.deepEqual(rgb(`#${circle[4]}`), LAMP_GREEN, '指示灯颜色');
+});
 
-  const tile = svg.match(/<rect [^>]*fill="#([\da-f]{6})"/i)[1];
-  const lamp = svg.match(/<circle [^>]*fill="#([\da-f]{6})"/i)[1];
-  assert.deepEqual(rgb(tile), REGULAR.tile, '底板颜色');
-  assert.deepEqual(rgb(paths[0][2]), REGULAR.body, '鼠标颜色');
-  assert.deepEqual(rgb(lamp), LAMP.green, '指示灯颜色');
+test('图标：小尺寸帧里框是整像素宽的空心线，鼠标保持细长，灯是绿的', () => {
+  for (const size of SMALL_SIZES) {
+    const g = layoutFor(size);
+    assert.ok(Number.isInteger(g.inset) && g.inset >= 1, `${size} 像素：方框外沿要落在像素边界上`);
+    assert.ok(Number.isInteger(g.stroke) && g.stroke >= 1, `${size} 像素：线宽要是整像素`);
+    const rgba = frameFor(size);
+    const px = (x, y) => [...rgba.slice((y * size + x) * 4, (y * size + x) * 4 + 4)];
+    const opaque = (x, y, what) => {
+      const p = px(x, y);
+      assert.equal(p[3], 255, `${size} 像素：${what}应该不透明`);
+      return p.slice(0, 3);
+    };
+    const body = size <= 24 ? [255, 255, 255] : BODY;
+    const tile = size <= 24 ? [0x11, 0x11, 0x13] : TILE;
+    // 方框上边的中点：实心白；框内左侧、鼠标外边：底色（框是空心的）
+    assert.deepEqual(opaque(size / 2, g.inset, '方框的线'), body, `${size} 像素：方框的线`);
+    assert.deepEqual(opaque(g.inset + g.stroke, size / 2, '方框内侧'), tile, `${size} 像素：方框里面应该是空的`);
+    // 鼠标：宽高比和大图一样，不到方框的一半宽
+    const ratio = MASTER.mouseW / MASTER.mouseH;
+    assert.ok(Math.abs(ratio - 0.755) < 0.01, `鼠标的宽高比是 ${ratio.toFixed(3)}`);
+    assert.ok(MASTER.mouseW / MASTER.frame < 0.53, '鼠标不到方框的一半宽');
+    // 灯心所在的那颗像素：24 像素及以上是纯绿；16 像素下灯不到 2 像素，只要求明显偏绿
+    const lamp = px(size / 2, Math.floor(size / 2 + MASTER.lampCy * (size / 1024)));
+    if (size >= 24) assert.deepEqual(lamp.slice(0, 3), LAMP_GREEN, `${size} 像素：指示灯`);
+    else assert.ok(lamp[1] > lamp[0] + 60 && lamp[1] > lamp[2] + 20, `16 像素：指示灯应该偏绿，实际 ${lamp}`);
+  }
 });
 
 test('图标：icon.ico 的小尺寸帧出自 small-frames.mjs（跑过 npx tauri icon 之后要再跑一遍它）', () => {

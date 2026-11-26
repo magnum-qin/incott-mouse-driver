@@ -21,7 +21,7 @@ const messages = {
     readingConfig: '正在读取配置…',
     deviceNotFound: '没找到鼠标，请重新拔插后重试',
     connectFailed: '连接失败：',
-    deviceDisconnected: '鼠标已断开，请检查连接后重新连接',
+    deviceDisconnected: '鼠标已断开，重新插上后会自动连接',
     batteryHint: '点击刷新电量',
     settingsTitle: '设置',
     // 导航
@@ -142,6 +142,7 @@ const messages = {
     panelDevice: '设备',
     statProfile: '配置',
     batteryLabel: '电量',
+    batteryWaiting: '上一次的读数，等鼠标上报',
     dpiStageOf: 'DPI · 第 {n} 档 / 共 {m} 档',
     // 设置菜单
     settingsAutoLaunch: '开机自启',
@@ -151,8 +152,6 @@ const messages = {
     settingsUiScale: '界面缩放',
     settingsUiScaleDesc: '按屏幕尺寸自动适配，也可手动指定',
     scaleAuto: '自动',
-    settingEnabled: '已开启：{n}',
-    settingDisabled: '已关闭：{n}',
     settingSaveFailed: '设置保存失败，请重试',
     // 托盘菜单 / 关于
     menuQuit: '退出',
@@ -166,6 +165,7 @@ const messages = {
     trayLevelOf: '第 {n} 档 / 共 {m} 档',
     trayHint: '双击图标打开完整界面',
     chargingTag: '充电中',
+    linkWired: '有线',
   },
 
   en: {
@@ -180,7 +180,7 @@ const messages = {
     readingConfig: 'Reading configuration…',
     deviceNotFound: 'Mouse not found — unplug and plug it back in, then retry',
     connectFailed: 'Connect failed: ',
-    deviceDisconnected: 'Mouse disconnected — check the connection and reconnect',
+    deviceDisconnected: 'Mouse disconnected — it reconnects automatically when plugged back in',
     batteryHint: 'Click to refresh battery',
     settingsTitle: 'Settings',
     // Navigation
@@ -301,6 +301,7 @@ const messages = {
     panelDevice: 'Device',
     statProfile: 'Profile',
     batteryLabel: 'Battery',
+    batteryWaiting: 'last known, waiting for the mouse to report',
     dpiStageOf: 'DPI · level {n} of {m}',
     // Settings menu
     settingsAutoLaunch: 'Launch on startup',
@@ -310,8 +311,6 @@ const messages = {
     settingsUiScale: 'Interface scale',
     settingsUiScaleDesc: 'Follows screen size, or pick a fixed scale',
     scaleAuto: 'Auto',
-    settingEnabled: 'Enabled: {n}',
-    settingDisabled: 'Disabled: {n}',
     settingSaveFailed: 'Failed to save settings, please retry',
     // Tray menu / about
     menuQuit: 'Quit',
@@ -325,6 +324,7 @@ const messages = {
     trayLevelOf: 'Level {n} of {m}',
     trayHint: 'Double-click the icon for the full app',
     chargingTag: 'Charging',
+    linkWired: 'Wired',
   },
 };
 
